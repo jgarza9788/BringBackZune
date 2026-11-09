@@ -1,0 +1,54 @@
+{
+  "name": "bring-back-zune",
+  "version": "0.1.0",
+  "description": "Zune-style (Metro) desktop music player for Jellyfin and Navidrome. Windows + Linux.",
+  "main": "dist/main/main.js",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "screenshots": "npm run build && node scripts/screenshots.mjs",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "probe": "npm run build && node scripts/probe.mjs",
+    "check": "npm run typecheck && npm test && npm run smoke"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@preact/signals": "^2.11.4",
+    "preact": "^10.24.0"
+  },
+  "build": {
+    "appId": "org.bringbackzune.app",
+    "productName": "Bring Back Zune",
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Audio"
+    }
+  }
+}
