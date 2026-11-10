@@ -5,12 +5,14 @@ export const MAX_HISTORY = 24;
 export const SMART_DJ_SLOTS = 5;
 
 export interface PinRef {
-  kind: 'artist' | 'album' | 'track';
+  kind: 'artist' | 'album' | 'playlist' | 'track';
   src: string;
   id: string;
   title: string;
   subtitle?: string;
   imageId?: string;
+  /** Tracks only: the album to open / start playback from. */
+  albumId?: string;
 }
 
 export interface QuickplayState {
@@ -66,7 +68,7 @@ export function pushHistory(state: QuickplayState, p: PinRef): void {
 }
 
 export function trackToPin(t: Track): PinRef {
-  return { kind: 'track', src: t.src, id: t.id, title: t.title, subtitle: t.artist, imageId: t.imageId };
+  return { kind: 'track', src: t.src, id: t.id, title: t.title, subtitle: t.artist, imageId: t.imageId, albumId: t.albumId };
 }
 
 export function setSmartDjSlot(state: QuickplayState, slot: number, seed: Seed | null): void {

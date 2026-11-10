@@ -4,6 +4,7 @@ import type {
   Artist,
   MusicSource,
   Page,
+  TrackPage,
   Playlist,
   SearchResults,
   Seed,
@@ -11,7 +12,7 @@ import type {
   Track,
 } from './types';
 import { SourceError } from './types';
-import { seededRng, shuffled } from './util';
+import { seededRng, shuffled, sortTracks } from './util';
 
 /** Offline sample library (fictional artists, generated typographic cover art, silent playback). */
 
@@ -116,6 +117,7 @@ function build(src: string): Built {
 
 export class DemoSource implements MusicSource {
   readonly kind = 'demo' as const;
+  readonly sortsTracksOnServer = true;
   config: SourceConfig;
   private readonly data: Built;
 
@@ -128,6 +130,11 @@ export class DemoSource implements MusicSource {
     return this.config;
   }
   async ping(): Promise<void> {}
+
+  async setFavorite(trackId: string, on: boolean): Promise<void> {
+    const t = this.allTracks().find((x) => x.id === trackId);
+    if (t) t.liked = on;
+  }
 
   private allTracks(): Track[] {
     return [...this.data.tracksByAlbum.values()].flat();
@@ -176,8 +183,8 @@ export class DemoSource implements MusicSource {
     if (!d) throw new SourceError('Playlist not found', 'server', 404);
     return d;
   }
-  async getTracks(page: Page = {}): Promise<Track[]> {
-    const list = this.allTracks().sort((a, b) => a.title.localeCompare(b.title));
+  async getTracks(page: TrackPage = {}): Promise<Track[]> {
+    const list = sortTracks(this.allTracks(), page.sort ?? { by: 'title' });
     const off = page.offset ?? 0;
     return list.slice(off, off + (page.limit ?? 200));
   }

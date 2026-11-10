@@ -32,6 +32,8 @@ export interface Playlist {
   name: string;
   trackCount?: number;
   imageId?: string;
+  /** ISO date the playlist was created, when the server says. */
+  addedAt?: string;
 }
 
 export interface Track {
@@ -48,6 +50,8 @@ export interface Track {
   imageId?: string;
   /** File container / suffix, lowercase (mp3, flac, m4a ...). Used to decide on transcoding. */
   container?: string;
+  /** Favourite / starred on the server, as of when this track was fetched. */
+  liked?: boolean;
 }
 
 export interface SearchResults {
@@ -61,6 +65,15 @@ export type AlbumSort = 'name' | 'recent' | 'artist';
 export interface Page {
   limit?: number;
   offset?: number;
+}
+
+export type TrackSortKey = 'title' | 'artist' | 'album' | 'time';
+export interface TrackSort {
+  by: TrackSortKey;
+  desc?: boolean;
+}
+export interface TrackPage extends Page {
+  sort?: TrackSort;
 }
 
 export interface SourceConfig {
@@ -104,7 +117,9 @@ export interface MusicSource {
   getAlbum(id: string): Promise<{ album: Album; tracks: Track[] }>;
   getPlaylists(): Promise<Playlist[]>;
   getPlaylist(id: string): Promise<{ playlist: Playlist; tracks: Track[] }>;
-  getTracks(page?: Page): Promise<Track[]>;
+  /** True when `getTracks` honours `page.sort` on the server (so paging stays correct); otherwise sort what is loaded. */
+  readonly sortsTracksOnServer: boolean;
+  getTracks(page?: TrackPage): Promise<Track[]>;
   search(query: string): Promise<SearchResults>;
 
   getNewestAlbums(limit: number): Promise<Album[]>;
@@ -113,6 +128,8 @@ export interface MusicSource {
   /** A "radio" of tracks related to the seed. May return [] when the server has no recommender. */
   getMix(seed: Seed, limit: number): Promise<Track[]>;
   getTopTracks(artist: Artist, limit: number): Promise<Track[]>;
+  /** Like (favourite / star) or unlike a track on the server. Throws SourceError. */
+  setFavorite(trackId: string, on: boolean): Promise<void>;
 
   streamUrl(track: Track): string;
   imageUrl(imageId: string | undefined, size: number, kind?: 'primary' | 'backdrop'): string | undefined;
@@ -131,7 +148,7 @@ export class SourceError extends Error {
 
 /** Minimal HTTP abstraction so sources run in Node, the renderer (via IPC bridge) and tests. */
 export interface HttpRequest {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   headers?: Record<string, string>;
   body?: string;
 }

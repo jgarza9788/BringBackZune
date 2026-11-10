@@ -13,6 +13,7 @@ import {
   type Artist,
   type MusicSource,
   type PinRef,
+  type Playlist,
   type RepeatMode,
   type Seed,
   type Settings,
@@ -20,7 +21,7 @@ import {
   type Track,
 } from '../core';
 import { DEMO_CONFIG, getBridge, isElectron } from './bridge';
-import { Engine } from './engine';
+import { Engine, type Levels } from './engine';
 import { hashFor, parseHash, type Route } from './route';
 
 const bridge = getBridge();
@@ -100,6 +101,23 @@ export function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
 function buildInstances(): void {
   for (const cfg of settings.peek().sources) {
     if (!instances.has(cfg.id)) instances.set(cfg.id, createSource(cfg, bridge.http));
+  }
+}
+
+/** Optimistic like state keyed by `src:id`; overrides `Track.liked` (which only reflects when the track was fetched). */
+export const likes = signal<Record<string, boolean>>({});
+const likeKey = (t: Pick<Track, 'src' | 'id'>): string => `${t.src}:${t.id}`;
+export const isLiked = (t: Track): boolean => likes.value[likeKey(t)] ?? t.liked ?? false;
+
+export async function toggleLike(t: Track): Promise<void> {
+  const next = !isLiked(t);
+  const k = likeKey(t);
+  likes.value = { ...likes.value, [k]: next };
+  try {
+    await requireSource(t.src).setFavorite(t.id, next);
+  } catch (e) {
+    likes.value = { ...likes.value, [k]: !next };
+    notify(`Could not ${next ? 'like' : 'unlike'} "${t.title}": ${(e as Error).message}`, 'error');
   }
 }
 
@@ -216,6 +234,12 @@ export const player = {
 
 const queue = new PlaybackQueue();
 let errorSkips = 0;
+
+/** Live band energy (0..1) for the now-playing visualizer. */
+export const audioLevels = (): Levels => engine.levels();
+/** Spectrum bars (0..1, low to high frequency) for the control-bar visualizer. */
+export const audioPlaying = (): boolean => engine.isPlaying();
+export const audioSpectrum = (count: number): number[] => engine.spectrum(count);
 
 const engine = new Engine({
   time: (p, d) => {
@@ -420,15 +444,57 @@ export async function playArtist(src: string, id: string, opts: { shuffle?: bool
   }
 }
 
+export async function playPlaylist(src: string, id: string, opts: { shuffle?: boolean } = {}): Promise<void> {
+  try {
+    const { tracks } = await requireSource(src).getPlaylist(id);
+    playTracks(tracks, 0, { shuffle: opts.shuffle ?? false });
+  } catch (e) {
+    notify((e as Error).message, 'error');
+  }
+}
+
+/** Play a pinned song: from its position in its album, so the music keeps going afterwards. */
+async function playPinnedTrack(p: PinRef): Promise<void> {
+  try {
+    if (!p.albumId) return notify('This pinned song has no album to play from. Unpin and pin it again.', 'error');
+    const { tracks } = await requireSource(p.src).getAlbum(p.albumId);
+    const at = tracks.findIndex((t) => t.id === p.id);
+    if (at < 0) return notify('That song is no longer in its album', 'error');
+    playTracks(tracks, at, { shuffle: false });
+  } catch (e) {
+    notify((e as Error).message, 'error');
+  }
+}
+
 export function playPin(p: PinRef): Promise<void> {
-  return p.kind === 'artist' ? playArtist(p.src, p.id) : playAlbum(p.src, p.id);
+  switch (p.kind) {
+    case 'artist':
+      return playArtist(p.src, p.id);
+    case 'playlist':
+      return playPlaylist(p.src, p.id);
+    case 'track':
+      return playPinnedTrack(p);
+    default:
+      return playAlbum(p.src, p.id);
+  }
 }
 
 export function openPin(p: PinRef): void {
-  go(p.kind === 'artist' ? { name: 'artist', src: p.src, id: p.id } : { name: 'album', src: p.src, id: p.id });
+  switch (p.kind) {
+    case 'artist':
+      return go({ name: 'artist', src: p.src, id: p.id });
+    case 'playlist':
+      return go({ name: 'playlist', src: p.src, id: p.id });
+    case 'track':
+      // A song has no page of its own: open its album, or just play it when we don't know the album.
+      return p.albumId ? go({ name: 'album', src: p.src, id: p.albumId }) : void playPin(p);
+    default:
+      return go({ name: 'album', src: p.src, id: p.id });
+  }
 }
 
 export const artistPin = (a: Artist): PinRef => ({ kind: 'artist', src: a.src, id: a.id, title: a.name, imageId: a.imageId });
+export const playlistPin = (p: Playlist): PinRef => ({ kind: 'playlist', src: p.src, id: p.id, title: p.name, subtitle: p.trackCount != null ? `${p.trackCount} songs` : 'playlist', imageId: p.imageId });
 export const albumPin = (a: Album): PinRef => ({ kind: 'album', src: a.src, id: a.id, title: a.title, subtitle: a.artist, imageId: a.imageId });
 
 export function togglePinned(p: PinRef): void {

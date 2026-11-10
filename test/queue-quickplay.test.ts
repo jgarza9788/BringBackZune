@@ -9,6 +9,7 @@ import {
   pushHistory,
   setSmartDjSlot,
   togglePin,
+  trackToPin,
   type PinRef,
 } from '../src/core/quickplay';
 import type { Track } from '../src/core/types';
@@ -94,6 +95,18 @@ describe('Quickplay state', () => {
     expect(togglePin(s, pin('a0'))).toBe(true);
     expect(isPinned(s, pin('a0'))).toBe(false);
     expect(togglePin(s, pin('overflow'))).toBe(true);
+  });
+
+  it('treats the same id as different pins when the kind differs, and keeps playlist/track pins across a reload', () => {
+    const s = emptyQuickplay();
+    const t = { src: 's', id: 'x', title: 'Song', artist: 'Band', album: 'LP', albumId: 'al1', durationSec: 10 } as Track;
+    togglePin(s, { kind: 'playlist', src: 's', id: 'x', title: 'Mix' });
+    togglePin(s, { kind: 'album', src: 's', id: 'x', title: 'Album' });
+    togglePin(s, trackToPin(t));
+    expect(s.pins.map((p) => p.kind)).toEqual(['playlist', 'album', 'track']);
+    expect(trackToPin(t).albumId).toBe('al1');
+    const back = loadQuickplay(JSON.parse(JSON.stringify(s)));
+    expect(back.pins).toEqual(s.pins);
   });
 
   it('history is most-recent-first, de-duplicated and capped', () => {

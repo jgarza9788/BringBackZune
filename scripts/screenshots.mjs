@@ -14,13 +14,13 @@ const scenes = [
   ['collection-artists', '#/collection/artists'],
   ['collection-albums', '#/collection/albums'],
   ['collection-songs', '#/collection/songs'],
+  ['collection-playlists', '#/collection/playlists'],
   ['artist', '#/artist/demo/ar0'],
   ['album', '?play=al1-0#/album/demo/al0-0'],
   ['nowplaying', '?play=al0-0&accent=1BA1E2#/nowplaying'],
-  ['mixview', '#/mixview/demo/artist/ar0'],
   ['search', '#/search/aurora'],
   ['sources', '#/sources'],
-  ['mini', '?play=al0-0&mini=1#/quickplay', '380,170'],
+  ['mini', '?play=al0-0&mini=1#/quickplay', '500,470'],
 ];
 
 for (const [name, suffix, size = '1280,800'] of scenes) {

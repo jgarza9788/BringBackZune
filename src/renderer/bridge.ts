@@ -7,6 +7,11 @@ export interface Bridge {
   saveSettings(s: Settings): Promise<Settings>;
   http: Http;
   setMini(on: boolean): Promise<void>;
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<boolean>;
+  close(): Promise<void>;
+  isMaximized(): Promise<boolean>;
+  onMaximized(cb: (maximized: boolean) => void): void;
 }
 
 declare global {
@@ -34,6 +39,11 @@ export function getBridge(): Bridge {
       throw new Error('Network access needs the desktop app');
     },
     setMini: async () => {},
+    minimize: async () => {},
+    toggleMaximize: async () => false,
+    close: async () => {},
+    isMaximized: async () => false,
+    onMaximized: () => {},
   };
 }
 

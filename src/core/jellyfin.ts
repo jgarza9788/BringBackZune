@@ -6,6 +6,7 @@ import {
   type Http,
   type MusicSource,
   type Page,
+  type TrackPage,
   type Playlist,
   type SearchResults,
   type Seed,
@@ -38,6 +39,7 @@ interface JfItem {
   RunTimeTicks?: number;
   DateCreated?: string;
   Container?: string;
+  UserData?: { IsFavorite?: boolean };
   ImageTags?: { Primary?: string };
   BackdropImageTags?: string[];
 }
@@ -48,6 +50,7 @@ interface JfList {
 
 export class JellyfinSource implements MusicSource {
   readonly kind = 'jellyfin' as const;
+  readonly sortsTracksOnServer = true;
   config: SourceConfig;
 
   constructor(
@@ -96,6 +99,27 @@ export class JellyfinSource implements MusicSource {
     });
   }
 
+  async setFavorite(trackId: string, on: boolean): Promise<void> {
+    const { token, userId, url } = this.config;
+    if (!token || !userId) throw new SourceError('Not signed in', 'auth');
+    const method = on ? 'POST' : 'DELETE';
+    const headers = { Authorization: this.authHeader(), 'X-Emby-Token': token };
+    const send = async (path: string, params: Params): Promise<{ status: number }> => {
+      try {
+        return await this.http(buildUrl(url, path, params), { method, headers });
+      } catch (e) {
+        throw new SourceError(`Cannot reach server: ${(e as Error).message}`, 'network');
+      }
+    };
+    // Jellyfin 10.9+ uses /UserFavoriteItems; older servers only have the per-user route.
+    let res = await send(`/UserFavoriteItems/${encodeURIComponent(trackId)}`, { userId });
+    if (res.status === 404 || res.status === 405) {
+      res = await send(`/Users/${encodeURIComponent(userId)}/FavoriteItems/${encodeURIComponent(trackId)}`, {});
+    }
+    if (res.status === 401 || res.status === 403) throw new SourceError('Authentication failed', 'auth', res.status);
+    if (res.status < 200 || res.status >= 300) throw new SourceError(`Server returned HTTP ${res.status}`, 'server', res.status);
+  }
+
   private async items(params: Params): Promise<JfItem[]> {
     const res = await this.get<JfList>('/Items', { Recursive: true, ...params });
     return res.Items ?? [];
@@ -142,6 +166,7 @@ export class JellyfinSource implements MusicSource {
       durationSec: (i.RunTimeTicks ?? 0) / TICKS_PER_SEC,
       imageId: i.ImageTags?.Primary ? i.Id : i.AlbumPrimaryImageTag ? i.AlbumId : undefined,
       container: i.Container?.toLowerCase(),
+      liked: i.UserData?.IsFavorite,
     };
   }
 
@@ -213,11 +238,12 @@ export class JellyfinSource implements MusicSource {
       name: i.Name ?? 'Untitled playlist',
       trackCount: i.ChildCount,
       imageId: i.ImageTags?.Primary ? i.Id : undefined,
+      addedAt: i.DateCreated,
     };
   }
 
   async getPlaylists(): Promise<Playlist[]> {
-    const items = await this.items({ IncludeItemTypes: 'Playlist', MediaTypes: 'Audio', SortBy: 'SortName', Fields: 'ChildCount' });
+    const items = await this.items({ IncludeItemTypes: 'Playlist', MediaTypes: 'Audio', SortBy: 'SortName', Fields: 'ChildCount,DateCreated' });
     return items.map((p) => this.playlist(p));
   }
 
@@ -231,10 +257,13 @@ export class JellyfinSource implements MusicSource {
     return { playlist: this.playlist(item), tracks: (res.Items ?? []).map((t) => this.track(t)) };
   }
 
-  async getTracks(page: Page = {}): Promise<Track[]> {
+  async getTracks(page: TrackPage = {}): Promise<Track[]> {
+    const by = page.sort?.by ?? 'title';
     const items = await this.items({
       IncludeItemTypes: 'Audio',
-      SortBy: 'SortName',
+      SortBy:
+        by === 'artist' ? 'Artist,Album,ParentIndexNumber,IndexNumber,SortName' : by === 'album' ? 'Album,ParentIndexNumber,IndexNumber,SortName' : by === 'time' ? 'Runtime,SortName' : 'SortName',
+      SortOrder: page.sort?.desc ? 'Descending' : 'Ascending',
       Limit: page.limit ?? 200,
       StartIndex: page.offset ?? 0,
     });

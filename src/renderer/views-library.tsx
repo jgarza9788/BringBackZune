@@ -1,6 +1,19 @@
 import type { JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { formatTime, MAX_PINS, SMART_DJ_SLOTS, isPinned, type Album, type Artist, type Seed, type Track } from '../core';
+import {
+  formatTime,
+  MAX_PINS,
+  SMART_DJ_SLOTS,
+  isPinned,
+  sortTracks,
+  type Album,
+  type Artist,
+  type Playlist,
+  type Seed,
+  type Track,
+  type TrackSort,
+  type TrackSortKey,
+} from '../core';
 import {
   activeConfig,
   addDemoSource,
@@ -11,11 +24,14 @@ import {
   clearSmartDj,
   enqueue,
   go,
+  notify,
   openPin,
   player,
   playAlbum,
   playArtist,
+  playlistPin,
   playPin,
+  playPlaylist,
   playSmartDj,
   playTracks,
   requireSource,
@@ -130,7 +146,17 @@ export function Quickplay(): JSX.Element {
                   </button>
                 </Tile>
               ) : (
-                <div key={i} class="tile slot">
+                <div
+                  key={i}
+                  class="tile slot"
+                  role="button"
+                  tabIndex={0}
+                  title="Right-click an album or artist (or use its pin button) to pin it here"
+                  onClick={() => {
+                    notify('Right-click any album or artist, or use its pin button, to pin it to Quickplay');
+                    go({ name: 'collection', tab: 'albums' });
+                  }}
+                >
                   <Icon name="pin" size={26} />
                   <span>{i === 0 ? 'pin favourites here' : ''}</span>
                 </div>
@@ -182,6 +208,7 @@ export function AlbumTile({ album, i = 0, showYear = false }: { album: Album; i?
       imageId={album.imageId}
       onClick={() => go({ name: 'album', src: album.src, id: album.id })}
       onPlay={() => void playAlbum(album.src, album.id)}
+      pin={albumPin(album)}
     />
   );
 }
@@ -196,6 +223,7 @@ export function ArtistTile({ artist, i = 0 }: { artist: Artist; i?: number }): J
       imageId={artist.imageId}
       onClick={() => go({ name: 'artist', src: artist.src, id: artist.id })}
       onPlay={() => void playArtist(artist.src, artist.id)}
+      pin={artistPin(artist)}
     />
   );
 }
@@ -230,6 +258,18 @@ export function Collection({ tab }: { tab: Tab }): JSX.Element {
   );
 }
 
+/** Scroll a letter group to just below the sticky jump bar (which would otherwise cover its top). */
+function jumpToLetter(l: string): void {
+  const el = document.getElementById(`letter-${l}`);
+  const main = el?.closest('.main');
+  const bar = main?.querySelector<HTMLElement>('.letters');
+  if (!el || !main || !bar) return;
+  // Where the bar's bottom edge sits once stuck: sticky offsets are measured from inside the scroller's padding.
+  const stuckBottom = (parseFloat(getComputedStyle(main).paddingTop) || 0) + (parseFloat(getComputedStyle(bar).top) || 0) + bar.offsetHeight;
+  const delta = el.getBoundingClientRect().top - main.getBoundingClientRect().top;
+  main.scrollTo({ top: Math.max(0, main.scrollTop + delta - stuckBottom - 6), behavior: 'smooth' });
+}
+
 const letterOf = (name: string): string => {
   const c = name.replace(/^(the|a|an)\s+/i, '').trim().charAt(0).toUpperCase();
   return /[A-Z]/.test(c) ? c : '#';
@@ -253,7 +293,7 @@ function ArtistsTab({ srcId }: { srcId: string }): JSX.Element {
           <>
             <div class="letters">
               {letters.map((l) => (
-                <button key={l} onClick={() => document.getElementById(`letter-${l}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                <button key={l} onClick={() => jumpToLetter(l)}>
                   {l}
                 </button>
               ))}
@@ -341,14 +381,37 @@ function AlbumsTab({ srcId }: { srcId: string }): JSX.Element {
   );
 }
 
+type PlaylistSort = 'name' | 'size' | 'recent';
+
+const sortPlaylists = (lists: Playlist[], by: PlaylistSort): Playlist[] => {
+  const name = (p: Playlist): string => p.name.replace(/^(the|a|an)\s+/i, '');
+  const byName = (a: Playlist, b: Playlist): number => name(a).localeCompare(name(b), undefined, { sensitivity: 'base', numeric: true });
+  const out = lists.slice();
+  if (by === 'size') return out.sort((a, b) => (b.trackCount ?? 0) - (a.trackCount ?? 0) || byName(a, b));
+  if (by === 'recent') return out.sort((a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? '') || byName(a, b));
+  return out.sort(byName);
+};
+
 function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
   const st = useAsync(() => cached(`playlists:${srcId}`, () => requireSource(srcId).getPlaylists()), [srcId]);
+  const [sort, setSort] = useState<PlaylistSort>('name');
   return (
     <Await state={st}>
-      {(lists) =>
-        lists.length === 0 ? (
+      {(all) => {
+        const lists = sortPlaylists(all, sort);
+        // "recently added" only makes sense when the server tells us when playlists were created
+        const choices = (['name', 'size', 'recent'] as const).filter((s) => s !== 'recent' || all.some((p) => p.addedAt));
+        return lists.length === 0 ? (
           <div class="status">no playlists found</div>
         ) : (
+          <>
+          <div class="chips">
+            {choices.map((s) => (
+              <button key={s} class={`chip ${s === sort ? 'on' : ''}`} onClick={() => setSort(s)}>
+                {s === 'recent' ? 'recently added' : s === 'size' ? 'most songs' : 'by name'}
+              </button>
+            ))}
+          </div>
           <div class="grid">
             {lists.map((p, i) => (
               <Tile
@@ -359,12 +422,14 @@ function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
                 src={p.src}
                 imageId={p.imageId}
                 onClick={() => go({ name: 'playlist', src: p.src, id: p.id })}
-                onPlay={() => void requireSource(p.src).getPlaylist(p.id).then((r) => playTracks(r.tracks, 0, { shuffle: false }))}
+                onPlay={() => void playPlaylist(p.src, p.id)}
+                pin={playlistPin(p)}
               />
             ))}
           </div>
-        )
-      }
+          </>
+        );
+      }}
     </Await>
   );
 }
@@ -375,6 +440,8 @@ export function PlaylistPage({ src, id }: { src: string; id: string }): JSX.Elem
     <Await state={st}>
       {({ playlist, tracks }) => {
         const total = tracks.reduce((n, t) => n + t.durationSec, 0);
+        const pin = playlistPin(playlist);
+        const pinned = isPinned(settings.value.quickplay, pin);
         return (
           <div class="detail">
             <div class="hero">
@@ -395,6 +462,9 @@ export function PlaylistPage({ src, id }: { src: string; id: string }): JSX.Elem
                   <button class="btn" onClick={() => enqueue(tracks)}>
                     <Icon name="plus" size={18} /> add to now playing
                   </button>
+                  <button class={`btn ${pinned ? 'on' : ''}`} onClick={() => togglePinned(pin)}>
+                    <Icon name="pin" size={18} /> {pinned ? 'pinned' : 'pin'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -407,10 +477,18 @@ export function PlaylistPage({ src, id }: { src: string; id: string }): JSX.Elem
 }
 
 function SongsTab({ srcId }: { srcId: string }): JSX.Element {
-  const p = usePaged((offset, limit) => requireSource(srcId).getTracks({ offset, limit }), [srcId]);
+  const [sort, setSort] = useState<TrackSort>({ by: 'title' });
+  const source = requireSource(srcId);
+  // Servers that can sort do it themselves (so paging stays correct); otherwise we sort what has loaded so far.
+  const p = usePaged((offset, limit) => source.getTracks({ offset, limit, sort }), [srcId, sort.by, sort.desc]);
+  const rows = source.sortsTracksOnServer ? p.items : sortTracks(p.items, sort);
+  const onSort = (by: TrackSortKey): void => setSort((s) => (s.by === by ? { by, desc: !s.desc } : { by }));
   return (
     <>
-      <TrackList tracks={p.items} showArtist showAlbum />
+      <TrackList tracks={rows} showArtist showAlbum sort={{ ...sort, onSort }} />
+      {!source.sortsTracksOnServer && !p.done && p.items.length > 0 && sort.by !== 'title' && (
+        <div class="status">sorting the songs loaded so far — load more to include the rest of your library</div>
+      )}
       <MoreButton {...p} empty={!p.busy && p.items.length === 0} />
     </>
   );
@@ -462,9 +540,6 @@ export function ArtistPage({ src, id }: { src: string; id: string }): JSX.Elemen
                   </button>
                   <button class="btn" onClick={() => void playArtist(src, id, { shuffle: true })}>
                     <Icon name="shuffle" size={18} /> shuffle
-                  </button>
-                  <button class="btn" onClick={() => go({ name: 'mixview', src, kind: 'artist', id })}>
-                    <Icon name="mix" size={18} /> mixview
                   </button>
                   <button class="btn" onClick={() => (assignSmartDj(seed), void playSmartDj(seed))}>
                     <Icon name="dj" size={18} /> smart dj
@@ -528,9 +603,6 @@ export function AlbumPage({ src, id }: { src: string; id: string }): JSX.Element
                   </button>
                   <button class="btn" onClick={() => enqueue(tracks)}>
                     <Icon name="plus" size={18} /> add to now playing
-                  </button>
-                  <button class="btn" onClick={() => go({ name: 'mixview', src, kind: 'album', id })}>
-                    <Icon name="mix" size={18} /> mixview
                   </button>
                   <button class="btn" onClick={() => (assignSmartDj(seed), void playSmartDj(seed))}>
                     <Icon name="dj" size={18} /> smart dj

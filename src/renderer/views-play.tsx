@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { buildMixView, formatTime, type MixNode } from '../core';
+import { formatTime, isPinned, type PinRef, type Track } from '../core';
 import { AlbumTile, ArtistTile } from './views-library';
 import {
   ACCENTS,
@@ -14,8 +14,6 @@ import {
   jumpTo,
   notify,
   player,
-  playAlbum,
-  playArtist,
   reconnectSource,
   removeFromQueue,
   removeSource,
@@ -24,11 +22,14 @@ import {
   setAccent,
   setActiveSource,
   settings,
+  togglePinned,
   type NewSourceInput,
 } from './state';
-import { Art, Await, Icon, Section, Tile, TrackList, useAsync } from './ui';
+import { Art, Await, Icon, LikeButton, Section, TrackList, useAsync } from './ui';
 
 /* ---------------------------------------------------------------- now playing */
+
+const nowAlbumPin = (t: Track): PinRef => ({ kind: 'album', src: t.src, id: t.albumId ?? '', title: t.album, subtitle: t.artist, imageId: t.imageId });
 
 export function NowPlaying(): JSX.Element {
   const t = player.track.value;
@@ -87,9 +88,16 @@ export function NowPlaying(): JSX.Element {
             </span>
           </div>
           <div class="np-actions">
-            <button class="btn" onClick={() => t.artistId && go({ name: 'mixview', src: t.src, kind: 'artist', id: t.artistId })} disabled={!t.artistId}>
-              <Icon name="mix" size={18} /> mixview
-            </button>
+            <LikeButton track={t} size={26} class="ib" />
+            {t.albumId && (
+              <button
+                class={`ib ${isPinned(settings.value.quickplay, nowAlbumPin(t)) ? 'on' : ''}`}
+                title={isPinned(settings.value.quickplay, nowAlbumPin(t)) ? 'Unpin album from Quickplay' : 'Pin album to Quickplay'}
+                onClick={() => togglePinned(nowAlbumPin(t))}
+              >
+                <Icon name="pin" size={24} />
+              </button>
+            )}
           </div>
         </div>
         <aside class="np-queue">
@@ -114,63 +122,6 @@ export function NowPlaying(): JSX.Element {
           )}
         </aside>
       </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- mixview */
-
-export function MixView({ src, kind, id }: { src: string; kind: 'artist' | 'album'; id: string }): JSX.Element {
-  const st = useAsync(() => buildMixView(requireSource(src), { kind, id }, 8), [src, kind, id]);
-  return (
-    <Await state={st}>
-      {({ center, related }) => (
-        <div class="mix" key={`${kind}${id}`}>
-          <div class="mix-stage">
-            {related.map((n, i) => {
-              const ang = (i / related.length) * Math.PI * 2 - Math.PI / 2;
-              return (
-                <Tile
-                  key={`${n.kind}${n.id}`}
-                  class="mix-sat"
-                  title={n.title}
-                  subtitle={n.subtitle}
-                  src={n.src}
-                  imageId={n.imageId}
-                  i={i}
-                  vars={{ '--cx': Math.cos(ang).toFixed(4), '--cy': Math.sin(ang).toFixed(4) }}
-                  onClick={() => go({ name: 'mixview', src: n.src, kind: n.kind, id: n.id })}
-                  onPlay={() => void (n.kind === 'artist' ? playArtist(n.src, n.id) : playAlbum(n.src, n.id))}
-                />
-              );
-            })}
-            <MixCenter node={center} />
-          </div>
-          <p class="mix-hint">select any tile to re-centre mixview on it</p>
-        </div>
-      )}
-    </Await>
-  );
-}
-
-function MixCenter({ node }: { node: MixNode }): JSX.Element {
-  return (
-    <div class="mix-center">
-      <div class="tile mix-main">
-        <Art src={node.src} id={node.imageId} label={node.title} size={500} />
-        <button
-          class="tile-play always"
-          title="Play"
-          onClick={() => void (node.kind === 'artist' ? playArtist(node.src, node.id) : playAlbum(node.src, node.id))}
-        >
-          <Icon name="play" size={30} />
-        </button>
-      </div>
-      <h1>{node.title}</h1>
-      <div class="meta">{node.subtitle}</div>
-      <button class="btn" onClick={() => go({ name: node.kind, src: node.src, id: node.id })}>
-        open {node.kind}
-      </button>
     </div>
   );
 }

@@ -20,7 +20,6 @@ First launch: open **sources**, add a Jellyfin or Navidrome server, or click *ad
 | Quickplay start screen | Now Playing tile, 6 Pins, 5 Smart DJ slots, History, New |
 | Collection | Artists (A–Z jump bar), Albums (sort by name/artist/recent), Playlists, Songs |
 | Now Playing | Full-window artist backdrop (Ken Burns), big type, scrolling info line, "playing next" queue |
-| MixView | Item in the centre, related artists/albums blossom around it; click to re-centre |
 | Smart DJ | Seed from any artist/album/track; server recommender first, then top tracks, then random |
 | Mini player | Compact always-on-top window |
 | Metro design | Black canvas, light typography, flat tiles, one accent colour, turnstile/rise motion |
@@ -52,7 +51,7 @@ npm run screenshots   # renders every screen of the offline demo to ./screenshot
 ```
 
 ```
-src/core      source-agnostic logic: Jellyfin + Subsonic clients, queue, Quickplay, Smart DJ, MixView, demo library
+src/core      source-agnostic logic: Jellyfin + Subsonic clients, queue, Quickplay, Smart DJ, demo library
 src/main      Electron main process: window, settings store, CORS-free HTTP bridge, cert allow-list
 src/renderer  Preact UI (state.ts = player + library state, views-*.tsx, styles.css)
 test          vitest unit tests (clients run against mocked HTTP)

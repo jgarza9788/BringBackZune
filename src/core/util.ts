@@ -87,3 +87,30 @@ export function newId(): string {
   if (c?.randomUUID) return c.randomUUID();
   return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+const stripArticle = (s: string): string => s.replace(/^(the|a|an)\s+/i, '');
+
+/** Sort tracks like a library table: the chosen column first, then sensible tie-breakers. Returns a new array. */
+export function sortTracks<T extends { title: string; artist: string; album: string; durationSec: number; discNo?: number; trackNo?: number }>(
+  tracks: readonly T[],
+  sort: { by: 'title' | 'artist' | 'album' | 'time'; desc?: boolean },
+): T[] {
+  const dir = sort.desc ? -1 : 1;
+  const byTitle = (a: T, b: T): number => collator.compare(stripArticle(a.title), stripArticle(b.title));
+  const byAlbumOrder = (a: T, b: T): number =>
+    collator.compare(stripArticle(a.album), stripArticle(b.album)) || (a.discNo ?? 0) - (b.discNo ?? 0) || (a.trackNo ?? 0) - (b.trackNo ?? 0);
+  const cmp = (a: T, b: T): number => {
+    switch (sort.by) {
+      case 'artist':
+        return collator.compare(stripArticle(a.artist), stripArticle(b.artist)) || byAlbumOrder(a, b) || byTitle(a, b);
+      case 'album':
+        return byAlbumOrder(a, b) || byTitle(a, b);
+      case 'time':
+        return a.durationSec - b.durationSec || byTitle(a, b);
+      default:
+        return byTitle(a, b);
+    }
+  };
+  return tracks.slice().sort((a, b) => dir * cmp(a, b));
+}
