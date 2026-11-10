@@ -4,6 +4,17 @@ A Zune-software-style (Metro) desktop music player that streams from **Jellyfin*
 
 ## Run
 
+One command that installs (first time), builds and launches:
+
+```powershell
+.un.ps1             # Windows (PowerShell); add -Clean to reinstall dependencies
+```
+```bash
+./run.sh              # Linux; add --clean to reinstall, other flags go to Electron (e.g. --no-sandbox)
+```
+
+Or by hand:
+
 ```bash
 npm install
 npm start          # builds and launches
@@ -19,13 +30,16 @@ First launch: open **sources**, add a Jellyfin or Navidrome server, or click *ad
 |---|---|
 | Quickplay start screen | Now Playing tile, 6 Pins, 5 Smart DJ slots, History, New |
 | Collection | Artists (A–Z jump bar), Albums (sort by name/artist/recent), Playlists, Songs |
-| Now Playing | Full-window artist backdrop (Ken Burns), big type, scrolling info line, "playing next" queue |
+| Now Playing | Full-bleed wall of album covers in mixed sizes (1x / 3x / 4x), tinted with the accent colour and slowly drifting around the colour wheel. Cover + bold caps artist / album / title bottom-left, the queue bottom-right (playing track highlighted, click to jump), an art-only full-screen mode (`Esc` to leave). Header and control bar float over the wall; the nav links appear when the pointer is at the top |
+| Control bar | Compact: small cover, thin progress line with elapsed / remaining time, transport and volume on the right, and an accent-coloured glow that rises from the bottom edge and ripples with the music while something plays |
 | Smart DJ | Seed from any artist/album/track; server recommender first, then top tracks, then random |
 | Mini player | Compact always-on-top window |
 | Metro design | Black canvas, light typography, flat tiles, one accent colour, turnstile/rise motion |
 | Media keys / MPRIS / Windows media overlay | Via Chromium's Media Session |
 
-Keyboard: `Space` play/pause, `Ctrl+←/→` previous/next, `Esc` leaves mini player.
+Keyboard: `Space` play/pause, `Ctrl+←/→` previous/next, `Esc` leaves the mini player and the full-screen Now Playing mode.
+
+The accent colour (Settings) drives the pink-by-default highlights, the glow and the Now Playing tint.
 
 ## Servers
 
@@ -62,10 +76,16 @@ Security model: `contextIsolation`, `sandbox`, no Node in the renderer, strict C
 
 ## Status / known gaps
 
-- Verified here: typecheck, 44 unit tests, 32 UI interaction checks and screenshots in headless Chrome against the demo library.
+- Verified here: typecheck, 55 unit tests, and UI checks and screenshots in headless Chrome against the demo library. The demo library's covers are generated letter tiles, so the Now Playing cover wall (real artwork only) shows a plain accent wash there; try it with a real server.
 - **Not yet verified against live servers or the packaged Electron shell** (the build sandbox couldn't reach NuGet/Electron binaries or run a Navidrome server). Run `npm run probe` and `npm start` on your machine.
 - Playlists are browse/play only (no create or edit), and are untested against live servers.
-- Not implemented: favourites/ratings, scrobbling / play-count reporting, offline cache, lyrics, gapless playback.
+- Not implemented: ratings, scrobbling / play-count reporting, offline cache, lyrics, gapless playback.
+
+## Roadmap (inspired by the original Zune software)
+
+- Quickplay as horizontally panning panes (neighbouring pane titles peeking in), with the Smart DJ row sliding up.
+- Collection as a dark three-pane view (artist list | albums | songs), a Genres tab, and a column chooser on the songs table.
+- "Save as playlist" for the Now Playing queue (needs a create-playlist call on both servers).
 
 ## Naming / assets
 
