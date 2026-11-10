@@ -6,6 +6,7 @@ import {
   cycleRepeat,
   go,
   nextTrack,
+  npFull,
   player,
   prevTrack,
   ready,
@@ -64,10 +65,10 @@ export function App(): JSX.Element {
   const active = activeConfig.value;
 
   return (
-    <div class={`shell route-${r.name}`}>
+    <div class={`shell route-${r.name} ${r.name === 'nowplaying' && npFull.value ? 'np-full' : ''}`}>
       <header class="head">
         <span class="accent-bar" />
-        <button class={`back ${detail || r.name === 'search' || r.name === 'sources' ? '' : 'off'}`} title="Back" onClick={() => history.back()}>
+        <button class={`back ${detail || r.name === 'search' || r.name === 'sources' || r.name === 'nowplaying' ? '' : 'off'}`} title="Back" onClick={() => history.back()}>
           <Icon name="back" size={14} />
         </button>
         <nav class="pivot">
@@ -232,25 +233,28 @@ function PlayerBar(): JSX.Element {
   return (
     <footer class="bar">
       <Visualizer />
-      <div class="bar-now" onClick={() => t && go({ name: 'nowplaying' })} role={t ? 'button' : undefined}>
+      <div class="bar-now">
         {t ? (
           <>
-            <Art src={t.src} id={t.imageId} label={t.title} size={120} class="bar-art" />
-            <div class="bar-text">
-              <div class="bar-title">{t.title}</div>
-              <div class="bar-sub">{t.artist}</div>
+            <Art src={t.src} id={t.imageId} label={t.title} size={120} class="bar-art" onClick={() => go({ name: 'nowplaying' })} />
+            <div class="bar-main">
+              <div class="bar-line">
+                <div class="bar-text" role="button" onClick={() => go({ name: 'nowplaying' })}>
+                  <span class="bar-title">{t.title}</span>
+                  <span class="bar-sub">{t.artist}</span>
+                </div>
+                <LikeButton track={t} size={16} class="ib" />
+              </div>
+              <Progress remaining />
             </div>
-            <LikeButton track={t} size={20} class="ib" />
           </>
         ) : (
           <div class="bar-sub">nothing playing</div>
         )}
       </div>
-      <div class="bar-mid">
-        <Transport />
-        <Progress />
-      </div>
-      <div class="bar-right">
+      <div class="bar-ctl">
+        <Transport size={0.8} />
+        <div class="bar-right">
         <button class={`ib ${player.shuffle.value ? 'on' : ''}`} title="Shuffle" onClick={toggleShuffle}>
           <Icon name="shuffle" size={20} />
         </button>
@@ -274,6 +278,7 @@ function PlayerBar(): JSX.Element {
         <button class="ib" title="Mini player" onClick={() => void setMini(true)}>
           <Icon name="mini" size={20} />
         </button>
+      </div>
       </div>
     </footer>
   );
@@ -318,7 +323,10 @@ function useGlobalKeys(): void {
         togglePlay();
       } else if (e.ctrlKey && e.key === 'ArrowRight') nextTrack();
       else if (e.ctrlKey && e.key === 'ArrowLeft') prevTrack();
-      else if (e.key === 'Escape' && player.mini.value) void setMini(false);
+      else if (e.key === 'Escape' && npFull.value) {
+        npFull.value = false;
+        if (document.fullscreenElement) void document.exitFullscreen();
+      } else if (e.key === 'Escape' && player.mini.value) void setMini(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

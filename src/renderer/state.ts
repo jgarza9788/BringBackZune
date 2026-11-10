@@ -41,6 +41,8 @@ export const go = (r: Route): void => {
 export const ready = signal(false);
 export const settings = signal<Settings>(DEFAULT_SETTINGS);
 export const toast = signal<{ msg: string; kind: 'info' | 'error' } | null>(null);
+/** Now Playing "art only" mode: chrome hidden, cover centred over the mosaic. Esc leaves it. */
+export const npFull = signal(false);
 let toastTimer: number | undefined;
 
 export function notify(msg: string, kind: 'info' | 'error' = 'info'): void {
@@ -584,6 +586,7 @@ export async function init(): Promise<void> {
       if (q.get('paused') === '1') engine.pause();
     }
     if (q.get('mini') === '1') player.mini.value = true;
+    if (q.get('full') === '1') npFull.value = true; // preview only (screenshots)
   }
   ready.value = true;
 }

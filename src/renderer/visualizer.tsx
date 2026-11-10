@@ -58,7 +58,12 @@ export function Visualizer(): JSX.Element {
       for (let i = 0; i < BARS; i++) loudest = Math.max(loudest, cur[i] ?? 0);
       peak = Math.max(0.25, loudest, peak * 0.997);
       const norm = 1 / peak;
-      const bars = Array.from(cur, (v) => Math.min(1, v * norm));
+      let bars = Array.from(cur, (v) => Math.min(1, v * norm));
+      // smooth along the frequency axis: the original's edge is a gentle swell, not a jagged skyline
+      for (let pass = 0; pass < 2; pass++) {
+        const prev = bars;
+        bars = prev.map((v, i) => ((prev[i - 1] ?? v) + v * 2 + (prev[i + 1] ?? v)) / 4);
+      }
       let bass = 0;
       for (let i = 0; i < 6; i++) bass += bars[i] ?? 0;
       bass /= 6;
@@ -88,46 +93,41 @@ export function Visualizer(): JSX.Element {
       for (let i = 0; i < COLS; i++) {
         const x = (i / (COLS - 1)) * 2 - 1;
         // broad bell that eases all the way down to zero at both ends, so the glow melts into the window edge
-        const bell = Math.exp(-((x / 0.62) ** 2)) * Math.pow(Math.max(0, 1 - x * x), 1.1);
+        // wide, elliptical dome
+        const bell = Math.pow(Math.max(0, 1 - x * x), 0.62);
         const f = (i / (COLS - 1)) * (BARS - 1);
         const a = Math.floor(f);
         const v = (bars[a] ?? 0) + ((bars[Math.min(BARS - 1, a + 1)] ?? 0) - (bars[a] ?? 0)) * (f - a);
         // the whole dome heaves with the bass / overall energy, and its edge ripples with each band
-        const level = 0.3 + 0.55 * bass + 0.3 * energy;
-        top.push(h * Math.min(1, bell * level * (0.5 + 1.0 * v) * presence));
+        const level = 0.42 + 0.45 * bass + 0.25 * energy;
+        top.push(h * 0.82 * Math.min(1, bell * level * (0.72 + 0.5 * v) * presence));
       }
 
-      const pad = w * 0.07;
-      const core = mix(accent, [255, 255, 255], 0.14);
-      const path = (): void => {
-        g.beginPath();
-        // inset from the canvas sides (room for the blur) and run below the bottom edge (so it stays bright right at the window edge)
-        g.moveTo(pad, h + 40);
-        for (let i = 0; i < COLS; i++) g.lineTo(pad + (i / (COLS - 1)) * (w - pad * 2), h - (top[i] ?? 0));
-        g.lineTo(w - pad, h + 40);
-        g.closePath();
-      };
-      // fade out exactly at the tallest point so the top edge dissolves instead of ending in a line
-      const tallest = Math.max(4, ...top);
-      const fill = (): void => {
-        const grad = g.createLinearGradient(0, h, 0, h - tallest);
-        grad.addColorStop(0, rgba(core, 0.6));
-        grad.addColorStop(0.3, rgba(accent, 0.38));
-        grad.addColorStop(0.7, rgba(accent, 0.12));
-        grad.addColorStop(1, rgba(accent, 0));
-        g.fillStyle = grad;
-        g.fill();
+      const pad = w * 0.05;
+      const core = mix(accent, [255, 255, 255], 0.1);
+      const cw = (w - pad * 2) / (COLS - 1);
+      // One thin vertical strip per column, each fading to nothing at ITS OWN top: the upper edge of the dome is a
+      // soft feather (as in the original), never a drawn outline. The two blurred passes melt the strips together.
+      const strips = (): void => {
+        for (let i = 0; i < COLS - 1; i++) {
+          const t = Math.max(top[i] ?? 0, top[i + 1] ?? 0);
+          if (t < 1) continue;
+          const grad = g.createLinearGradient(0, h, 0, h - t);
+          grad.addColorStop(0, rgba(core, 0.78));
+          grad.addColorStop(0.3, rgba(accent, 0.46));
+          grad.addColorStop(0.65, rgba(accent, 0.14));
+          grad.addColorStop(1, rgba(accent, 0));
+          g.fillStyle = grad;
+          g.fillRect(pad + i * cw - 0.5, h - t, cw + 1, t + 40);
+        }
       };
       g.globalCompositeOperation = 'lighter';
-      // wide faint halo, then the crisper dome on top
-      g.filter = 'blur(7px)';
-      g.globalAlpha = 0.4;
-      path();
-      fill();
-      g.filter = 'blur(1.2px)';
-      g.globalAlpha = 1;
-      path();
-      fill();
+      g.filter = 'blur(10px)';
+      g.globalAlpha = 0.45;
+      strips();
+      g.filter = 'blur(4px)';
+      g.globalAlpha = 0.65;
+      strips();
       g.filter = 'none';
     };
     frame();
