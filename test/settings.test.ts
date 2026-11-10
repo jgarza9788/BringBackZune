@@ -45,3 +45,19 @@ describe('settings', () => {
     expect(await new SettingsStore(file).load()).toEqual(DEFAULT_SETTINGS);
   });
 });
+
+import { sanitizeSettings as sanitizeStrict } from '../src/core/settings';
+import { describe as d2, expect as e2, it as i2 } from 'vitest';
+
+d2('sanitizeSettings sources', () => {
+  i2('drops non-http(s) urls and unknown fields', () => {
+    const s = sanitizeStrict({
+      sources: [
+        { id: 'a', kind: 'jellyfin', name: 'A', url: 'file:///etc/passwd', username: 'u' },
+        { id: 'b', kind: 'navidrome', name: 'B', url: 'http://10.0.0.2:4533', username: 'u', evil: { x: 1 }, token: 5 },
+      ],
+    });
+    e2(s.sources).toHaveLength(1);
+    e2(s.sources[0]).toEqual({ id: 'b', kind: 'navidrome', name: 'B', url: 'http://10.0.0.2:4533', username: 'u' });
+  });
+});

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, session, shell, type Rectangle } from 'electron';
+import { app, BrowserWindow, ipcMain, net, session, shell, type IpcMainInvokeEvent, type Rectangle } from 'electron';
 import path from 'node:path';
 import type { HttpRequest, HttpResponse } from '../core';
 import type { Settings } from '../core';
@@ -24,6 +24,25 @@ function refreshSelfSigned(settings: Settings): void {
       /* ignore malformed url */
     }
   }
+}
+
+const MAX_RESPONSE_CHARS = 64 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+
+/** Only our own bundled page may talk to the privileged IPC handlers. */
+function isTrustedSender(e: IpcMainInvokeEvent): boolean {
+  const url = e.senderFrame?.url ?? '';
+  return !!win && e.sender === win.webContents && url.startsWith('file://') && url.includes('/renderer/index.html');
+}
+
+/** Header names/values must be plain strings; drops anything else the renderer might send. */
+function cleanHeaders(h: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!h || typeof h !== 'object') return out;
+  for (const [k, v] of Object.entries(h as Record<string, unknown>)) {
+    if (typeof v === 'string' && /^[A-Za-z0-9-]+$/.test(k) && !/[\r\n]/.test(v)) out[k] = v;
+  }
+  return out;
 }
 
 function createWindow(): void {
@@ -55,48 +74,73 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.on('will-redirect', (e) => e.preventDefault());
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
   win.on('maximize', () => win?.webContents.send('win:maximized', true));
   win.on('unmaximize', () => win?.webContents.send('win:maximized', false));
   win.on('closed', () => (win = null));
 }
 
 function registerIpc(): void {
-  ipcMain.handle('settings:load', async () => {
+  // Every handler refuses callers that are not our own bundled page.
+  const handle = <A extends unknown[], R>(channel: string, fn: (e: IpcMainInvokeEvent, ...args: A) => R | Promise<R>): void => {
+    ipcMain.handle(channel, (e, ...args) => {
+      if (!isTrustedSender(e)) throw new Error('Untrusted IPC sender');
+      return fn(e, ...(args as A));
+    });
+  };
+
+  handle('settings:load', async () => {
     const s = await store.load();
     refreshSelfSigned(s);
     return s;
   });
 
-  ipcMain.handle('settings:save', async (_e, settings: unknown) => {
+  handle('settings:save', async (_e, settings: unknown) => {
     const s = await store.save(settings);
     refreshSelfSigned(s);
     return s;
   });
 
   // Renderer pages are file:// so cross-origin fetches would hit CORS; the main process fetches instead.
-  ipcMain.handle('http:request', async (_e, url: unknown, req: unknown): Promise<HttpResponse> => {
+  handle('http:request', async (_e, url: unknown, req: unknown): Promise<HttpResponse> => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new Error('Only http(s) URLs are allowed');
     const r = (req ?? {}) as HttpRequest;
-    const res = await net.fetch(url, {
-      method: r.method === 'POST' || r.method === 'DELETE' ? r.method : 'GET',
-      headers: r.headers,
-      body: r.method === 'POST' ? r.body : undefined,
-      signal: AbortSignal.timeout(20_000),
-    });
-    return { status: res.status, text: await res.text() };
+    const method = r.method === 'POST' || r.method === 'DELETE' ? r.method : 'GET';
+    const body = method === 'POST' && typeof r.body === 'string' ? r.body : undefined;
+    let headers = cleanHeaders(r.headers);
+    let target = url;
+    // Follow redirects by hand so credentials (Authorization, X-Emby-Token) never leak to another origin.
+    for (let hop = 0; ; hop++) {
+      const res = await net.fetch(target, { method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (loc) {
+        if (hop >= MAX_REDIRECTS) throw new Error('Too many redirects');
+        const next = new URL(loc, target);
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') throw new Error('Redirect to a non-http(s) URL blocked');
+        if (next.origin !== new URL(target).origin) headers = {};
+        target = next.href;
+        continue;
+      }
+      const declared = Number(res.headers.get('content-length') ?? 0);
+      if (declared > MAX_RESPONSE_CHARS) throw new Error('Response too large');
+      const text = await res.text();
+      if (text.length > MAX_RESPONSE_CHARS) throw new Error('Response too large');
+      return { status: res.status, text };
+    }
   });
 
-  ipcMain.handle('win:minimize', () => win?.minimize());
-  ipcMain.handle('win:toggleMaximize', () => {
+  handle('win:minimize', () => win?.minimize());
+  handle('win:toggleMaximize', () => {
     if (!win) return false;
     if (win.isMaximized()) win.unmaximize();
     else win.maximize();
     return win.isMaximized();
   });
-  ipcMain.handle('win:close', () => win?.close());
-  ipcMain.handle('win:isMaximized', () => win?.isMaximized() ?? false);
+  handle('win:close', () => win?.close());
+  handle('win:isMaximized', () => win?.isMaximized() ?? false);
 
-  ipcMain.handle('win:mini', (_e, on: unknown) => {
+  handle('win:mini', (_e, on: unknown) => {
     if (!win) return;
     if (on) {
       wasMaximized = win.isMaximized();
@@ -131,6 +175,9 @@ void app.whenReady().then(() => {
     headers['Access-Control-Allow-Origin'] = ['*'];
     callback({ responseHeaders: headers });
   });
+  // The player needs no device permissions (camera, mic, geolocation, notifications ...).
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  session.defaultSession.setPermissionCheckHandler(() => false);
   registerIpc();
   createWindow();
   app.on('activate', () => {
