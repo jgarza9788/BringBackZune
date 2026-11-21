@@ -1,8 +1,9 @@
 /** Hash routing: pure functions (no DOM access) so they can be unit-tested. */
+import type { CollectionTab } from '../core/settings';
 
 export type Route =
   | { name: 'quickplay' }
-  | { name: 'collection'; tab: 'artists' | 'albums' | 'playlists' | 'songs' }
+  | { name: 'collection'; tab: CollectionTab }
   | { name: 'artist'; src: string; id: string }
   | { name: 'playlist'; src: string; id: string }
   | { name: 'album'; src: string; id: string }

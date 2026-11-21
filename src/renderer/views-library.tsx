@@ -6,9 +6,12 @@ import {
   SMART_DJ_SLOTS,
   isPinned,
   sortTracks,
+  PLAYLIST_SORTS,
   type Album,
+  type AlbumSort,
   type Artist,
   type Playlist,
+  type PlaylistSort,
   type Seed,
   type Track,
   type TrackSort,
@@ -38,6 +41,7 @@ import {
   settings,
   togglePinned,
   togglePlay,
+  update,
 } from './state';
 import { Art, Await, Icon, Section, Tile, TrackList, useAsync } from './ui';
 
@@ -360,7 +364,8 @@ function MoreButton(p: { done: boolean; busy: boolean; error?: string; more(): v
 }
 
 function AlbumsTab({ srcId }: { srcId: string }): JSX.Element {
-  const [sort, setSort] = useState<'name' | 'recent' | 'artist'>('name');
+  const sort = settings.value.collectionSort.albums;
+  const setSort = (v: AlbumSort): void => update((s) => (s.collectionSort.albums = v));
   const p = usePaged((offset, limit) => requireSource(srcId).getAlbums(sort, { offset, limit }), [srcId, sort]);
   return (
     <>
@@ -381,8 +386,6 @@ function AlbumsTab({ srcId }: { srcId: string }): JSX.Element {
   );
 }
 
-type PlaylistSort = 'name' | 'size' | 'recent';
-
 const sortPlaylists = (lists: Playlist[], by: PlaylistSort): Playlist[] => {
   const name = (p: Playlist): string => p.name.replace(/^(the|a|an)\s+/i, '');
   const byName = (a: Playlist, b: Playlist): number => name(a).localeCompare(name(b), undefined, { sensitivity: 'base', numeric: true });
@@ -394,13 +397,15 @@ const sortPlaylists = (lists: Playlist[], by: PlaylistSort): Playlist[] => {
 
 function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
   const st = useAsync(() => cached(`playlists:${srcId}`, () => requireSource(srcId).getPlaylists()), [srcId]);
-  const [sort, setSort] = useState<PlaylistSort>('name');
+  const saved = settings.value.collectionSort.playlists;
+  const setSort = (v: PlaylistSort): void => update((s) => (s.collectionSort.playlists = v));
   return (
     <Await state={st}>
       {(all) => {
-        const lists = sortPlaylists(all, sort);
         // "recently added" only makes sense when the server tells us when playlists were created
-        const choices = (['name', 'size', 'recent'] as const).filter((s) => s !== 'recent' || all.some((p) => p.addedAt));
+        const choices = PLAYLIST_SORTS.filter((s) => s !== 'recent' || all.some((p) => p.addedAt));
+        const sort = choices.includes(saved) ? saved : 'name';
+        const lists = sortPlaylists(all, sort);
         return lists.length === 0 ? (
           <div class="status">no playlists found</div>
         ) : (
@@ -477,7 +482,8 @@ export function PlaylistPage({ src, id }: { src: string; id: string }): JSX.Elem
 }
 
 function SongsTab({ srcId }: { srcId: string }): JSX.Element {
-  const [sort, setSort] = useState<TrackSort>({ by: 'title' });
+  const sort = settings.value.collectionSort.songs;
+  const setSort = (fn: (s: TrackSort) => TrackSort): void => update((st) => (st.collectionSort.songs = fn(st.collectionSort.songs)));
   const source = requireSource(srcId);
   // Servers that can sort do it themselves (so paging stays correct); otherwise we sort what has loaded so far.
   const p = usePaged((offset, limit) => source.getTracks({ offset, limit, sort }), [srcId, sort.by, sort.desc]);

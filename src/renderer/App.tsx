@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { formatTime } from '../core';
 import {
   activeConfig,
+  collectionRoute,
   cycleRepeat,
   go,
   nextTrack,
@@ -27,10 +28,10 @@ import { AlbumPage, ArtistPage, Collection, PlaylistPage, Quickplay } from './vi
 import { Visualizer } from './visualizer';
 import { NowPlaying, SearchView, SourcesView } from './views-play';
 
-const PIVOT: { label: string; match: Route['name'][]; to: Route }[] = [
-  { label: 'quickplay', match: ['quickplay'], to: { name: 'quickplay' } },
-  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist'], to: { name: 'collection', tab: 'artists' } },
-  { label: 'now playing', match: ['nowplaying'], to: { name: 'nowplaying' } },
+const PIVOT: { label: string; match: Route['name'][]; to: () => Route }[] = [
+  { label: 'quickplay', match: ['quickplay'], to: () => ({ name: 'quickplay' }) },
+  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist'], to: () => collectionRoute.value },
+  { label: 'now playing', match: ['nowplaying'], to: () => ({ name: 'nowplaying' }) },
 ];
 
 function View({ r }: { r: Route }): JSX.Element {
@@ -73,7 +74,7 @@ export function App(): JSX.Element {
         </button>
         <nav class="pivot">
           {PIVOT.map((p) => (
-            <a key={p.label} href={`#${hashOf(p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
+            <a key={p.label} href={`#${hashOf(p.to())}`} class={p.match.includes(r.name) ? 'active' : ''}>
               {p.label}
             </a>
           ))}
