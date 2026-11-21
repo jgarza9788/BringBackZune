@@ -1,12 +1,17 @@
 import { signal, computed } from '@preact/signals';
 import {
+  buildLikesMix,
   buildSmartMix,
   createSource,
   DEFAULT_SETTINGS,
+  MAX_COVERS,
   newId,
   PlaybackQueue,
   pushHistory,
+  recordFinish,
+  recordSkip,
   setSmartDjSlot,
+  skipScore,
   togglePin,
   trimUrl,
   type Album,
@@ -14,10 +19,12 @@ import {
   type MusicSource,
   type PinRef,
   type Playlist,
+  type Layout,
   type RepeatMode,
   type Seed,
   type Settings,
   type SourceConfig,
+  type Theme,
   type Track,
 } from '../core';
 import { DEMO_CONFIG, getBridge, isElectron } from './bridge';
@@ -31,7 +38,15 @@ const bridge = getBridge();
 export { hashFor, parseHash, type Route };
 
 export const route = signal<Route>(parseHash(location.hash));
-window.addEventListener('hashchange', () => (route.value = parseHash(location.hash)));
+/** The collection tab last visited, so the "collection" pivot returns to it. */
+export const lastCollectionTab = signal<'artists' | 'albums' | 'playlists' | 'songs' | 'liked'>('artists');
+const applyHash = (): void => {
+  const r = parseHash(location.hash);
+  if (r.name === 'collection') lastCollectionTab.value = r.tab;
+  route.value = r;
+};
+applyHash();
+window.addEventListener('hashchange', applyHash);
 export const go = (r: Route): void => {
   location.hash = hashFor(r);
 };
@@ -100,6 +115,11 @@ export function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
+/** Forget memoized queries whose key starts with `prefix` (e.g. after changing a playlist). */
+export function invalidate(prefix: string): void {
+  for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k);
+}
+
 function buildInstances(): void {
   for (const cfg of settings.peek().sources) {
     if (!instances.has(cfg.id)) instances.set(cfg.id, createSource(cfg, bridge.http));
@@ -130,7 +150,45 @@ export function requireSource(id: string): MusicSource {
 }
 
 export function artUrl(srcId: string, imageId: string | undefined, size: number, kind: 'primary' | 'backdrop' = 'primary'): string | undefined {
+  // A cover the listener replaced locally wins (reading the signal here re-renders art when it changes).
+  if (imageId && kind === 'primary') {
+    const own = settings.value.covers[coverKey(srcId, imageId)];
+    if (own) return own;
+  }
   return instances.get(srcId)?.imageUrl(imageId, size, kind);
+}
+
+/* ------------------------------------------------------------------ local cover art */
+
+const coverKey = (srcId: string, imageId: string): string => `${srcId}:${imageId}`;
+/** The cover that was just changed, for a moment, so its page can play the card-flip. */
+export const flipped = signal('');
+let flipTimer: number | undefined;
+function flip(key: string): void {
+  flipped.value = key;
+  window.clearTimeout(flipTimer);
+  flipTimer = window.setTimeout(() => (flipped.value = ''), 900);
+}
+export const isFlipping = (srcId: string, imageId: string | undefined): boolean => !!imageId && flipped.value === coverKey(srcId, imageId);
+export const hasOwnCover = (srcId: string, imageId: string | undefined): boolean => !!imageId && !!settings.value.covers[coverKey(srcId, imageId)];
+
+/** Replace a cover on this computer only (the server is not touched). `dataUrl` is a small JPEG. */
+export function setCover(srcId: string, imageId: string, dataUrl: string): void {
+  update((s) => {
+    const k = coverKey(srcId, imageId);
+    delete s.covers[k]; // re-insert so the oldest overrides are the ones that fall off
+    s.covers[k] = dataUrl;
+    const keys = Object.keys(s.covers);
+    for (const old of keys.slice(0, Math.max(0, keys.length - MAX_COVERS))) delete s.covers[old];
+  });
+  flip(coverKey(srcId, imageId));
+}
+
+export function clearCover(srcId: string, imageId: string): void {
+  update((s) => {
+    delete s.covers[coverKey(srcId, imageId)];
+  });
+  flip(coverKey(srcId, imageId));
 }
 
 export interface NewSourceInput {
@@ -254,6 +312,8 @@ const engine = new Engine({
   },
   state: (playing) => (player.playing.value = playing),
   ended: () => {
+    const done = player.track.peek();
+    if (done && skipScore(settings.peek().taste, done) > 0) update((s) => recordFinish(s.taste, done));
     const t = queue.next(true);
     syncQueue();
     if (t) startTrack(t);
@@ -350,7 +410,16 @@ export function togglePlay(): void {
   else engine.play();
 }
 
+/** Skipped early (not an error skip, not the end of the song): Smart DJ remembers it. */
+function noteSkip(): void {
+  const cur = player.track.peek();
+  if (!cur) return;
+  const dur = player.duration.peek() || cur.durationSec || 60;
+  if (player.position.peek() < Math.min(30, dur * 0.5)) update((s) => recordSkip(s.taste, cur));
+}
+
 export function nextTrack(): void {
+  noteSkip();
   const t = queue.next(false);
   syncQueue();
   if (t) startTrack(t);
@@ -512,9 +581,22 @@ export function togglePinned(p: PinRef): void {
 export async function playSmartDj(seed: Seed, seedTrack?: Track): Promise<void> {
   try {
     notify(`Building a mix from ${seed.title}…`);
-    const tracks = await buildSmartMix(requireSource(seed.src), seed, { limit: 40, seedTrack });
+    const tracks = await buildSmartMix(requireSource(seed.src), seed, { limit: 40, seedTrack, taste: settings.peek().taste });
     if (tracks.length === 0) return notify('This server returned no tracks for that mix', 'error');
     playTracks(tracks, 0);
+  } catch (e) {
+    notify((e as Error).message, 'error');
+  }
+}
+
+/** Smart DJ seeded from the songs you have liked. */
+export async function playLikesMix(src: string): Promise<void> {
+  try {
+    const source = requireSource(src);
+    const liked = await source.getLikedTracks(200);
+    if (liked.length === 0) return notify('Like a few songs first (the heart next to a song), then try again', 'error');
+    notify('Building a mix from your likes…');
+    playTracks(await buildLikesMix(source, liked, { limit: 40, taste: settings.peek().taste }), 0);
   } catch (e) {
     notify((e as Error).message, 'error');
   }
@@ -534,7 +616,94 @@ export function clearSmartDj(slot: number): void {
   update((s) => setSmartDjSlot(s.quickplay, slot, null));
 }
 
+/* ------------------------------------------------------------------ playlists */
+
+const songs = (n: number): string => `${n} song${n === 1 ? '' : 's'}`;
+
+/** Only tracks from `src` can go into a playlist on `src`. */
+function ownTracks(src: string, tracks: Track[]): Track[] {
+  const own = tracks.filter((t) => t.src === src);
+  if (own.length < tracks.length) notify(`${songs(tracks.length - own.length)} from another server left out`, 'error');
+  return own;
+}
+
+export async function createPlaylistFrom(src: string, name: string, tracks: Track[]): Promise<Playlist | undefined> {
+  const title = name.trim();
+  if (!title) {
+    notify('Give the playlist a name', 'error');
+    return undefined;
+  }
+  try {
+    const own = ownTracks(src, tracks);
+    const made = await requireSource(src).createPlaylist(title, own.map((t) => t.id));
+    invalidate(`playlists:${src}`);
+    notify(`Saved "${title}" (${songs(own.length)})`);
+    return made;
+  } catch (e) {
+    notify(`Could not save the playlist: ${(e as Error).message}`, 'error');
+    return undefined;
+  }
+}
+
+export async function addToPlaylist(playlist: Playlist, tracks: Track[]): Promise<boolean> {
+  try {
+    const own = ownTracks(playlist.src, tracks);
+    if (own.length === 0) return false;
+    await requireSource(playlist.src).addToPlaylist(playlist.id, own.map((t) => t.id));
+    invalidate(`playlists:${playlist.src}`);
+    notify(`Added ${songs(own.length)} to "${playlist.name}"`);
+    return true;
+  } catch (e) {
+    notify(`Could not add to "${playlist.name}": ${(e as Error).message}`, 'error');
+    return false;
+  }
+}
+
+/** "What's coming up" (and what has played) as a new playlist, on the server of the current song. */
+export async function saveQueueAsPlaylist(name: string): Promise<Playlist | undefined> {
+  const tracks = player.queue.peek();
+  const src = player.track.peek()?.src ?? tracks[0]?.src;
+  if (!src || tracks.length === 0) {
+    notify('The queue is empty', 'error');
+    return undefined;
+  }
+  return createPlaylistFrom(src, name, tracks);
+}
+
+/* ------------------------------------------------------------------ mixview */
+
+export interface Crumb {
+  src: string;
+  id: string;
+  name: string;
+}
+/** The artists you have moved through in Mixview, oldest first; the last one is the artist in the middle. */
+export const mixTrail = signal<Crumb[]>([]);
+
+/** Open Mixview on an artist as a fresh start (clears the trail); moving around inside Mixview keeps it. */
+export function openMixview(src: string, id: string): void {
+  mixTrail.value = [];
+  go({ name: 'mixview', src, id });
+}
+
 /* ------------------------------------------------------------------ init */
+
+const darkQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : undefined;
+
+function applyTheme(t: Theme): void {
+  const dark = t === 'dark' || (t === 'system' && (darkQuery?.matches ?? true));
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+}
+darkQuery?.addEventListener?.('change', () => applyTheme(settings.peek().theme));
+
+export function setTheme(t: Theme): void {
+  update((s) => (s.theme = t));
+  applyTheme(t);
+}
+
+export function setLayout(l: Layout): void {
+  update((s) => (s.layout = l));
+}
 
 function applyAccent(hex: string): void {
   document.documentElement.style.setProperty('--accent', hex);
@@ -566,6 +735,7 @@ export async function init(): Promise<void> {
   settings.value = loaded;
   buildInstances();
   applyAccent(loaded.accent);
+  applyTheme(loaded.theme);
   engine.setVolume(loaded.volume);
   player.volume.value = loaded.volume;
   queue.shuffle = loaded.shuffle;
@@ -577,6 +747,10 @@ export async function init(): Promise<void> {
     const q = new URLSearchParams(location.search);
     const accentParam = q.get('accent');
     if (accentParam && /^[0-9a-f]{6}$/i.test(accentParam)) setAccent(`#${accentParam}`);
+    const themeParam = q.get('theme');
+    if (themeParam === 'light' || themeParam === 'dark' || themeParam === 'system') setTheme(themeParam);
+    if (q.get('layout') === 'classic') setLayout('classic'); // preview only (screenshots)
+    (window as unknown as { __settings?: unknown }).__settings = settings; // preview only: lets the UI checks read state
     await seedPreview();
     const playAlbumId = q.get('play');
     if (playAlbumId) {

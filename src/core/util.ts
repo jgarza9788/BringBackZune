@@ -4,12 +4,14 @@ export function trimUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
-export type Params = Record<string, string | number | boolean | undefined>;
+/** A value may be a list: it is sent as a repeated query parameter (Subsonic `songId=1&songId=2`). */
+export type Params = Record<string, string | number | boolean | undefined | (string | number)[]>;
 
 export function buildUrl(base: string, path: string, params: Params = {}): string {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined) qs.set(k, String(v));
+    if (Array.isArray(v)) v.forEach((x) => qs.append(k, String(x)));
+    else if (v !== undefined) qs.set(k, String(v));
   }
   const q = qs.toString();
   return `${trimUrl(base)}${path}${q ? `?${q}` : ''}`;

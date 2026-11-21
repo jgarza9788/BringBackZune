@@ -94,7 +94,7 @@ export function Visualizer(): JSX.Element {
         const x = (i / (COLS - 1)) * 2 - 1;
         // broad bell that eases all the way down to zero at both ends, so the glow melts into the window edge
         // wide, elliptical dome
-        const bell = Math.pow(Math.max(0, 1 - x * x), 0.62);
+        const bell = Math.pow(Math.max(0, 1 - x * x), 1.1);
         const f = (i / (COLS - 1)) * (BARS - 1);
         const a = Math.floor(f);
         const v = (bars[a] ?? 0) + ((bars[Math.min(BARS - 1, a + 1)] ?? 0) - (bars[a] ?? 0)) * (f - a);
@@ -105,6 +105,8 @@ export function Visualizer(): JSX.Element {
 
       const pad = w * 0.05;
       const core = mix(accent, [255, 255, 255], 0.1);
+      // toward the top of the dome the colour drifts from the accent to a warm orange, as in the original's glow
+      const warm = mix(accent, [255, 138, 42], 0.5);
       const cw = (w - pad * 2) / (COLS - 1);
       // One thin vertical strip per column, each fading to nothing at ITS OWN top: the upper edge of the dome is a
       // soft feather (as in the original), never a drawn outline. The two blurred passes melt the strips together.
@@ -115,8 +117,8 @@ export function Visualizer(): JSX.Element {
           const grad = g.createLinearGradient(0, h, 0, h - t);
           grad.addColorStop(0, rgba(core, 0.78));
           grad.addColorStop(0.3, rgba(accent, 0.46));
-          grad.addColorStop(0.65, rgba(accent, 0.14));
-          grad.addColorStop(1, rgba(accent, 0));
+          grad.addColorStop(0.65, rgba(warm, 0.16));
+          grad.addColorStop(1, rgba(warm, 0));
           g.fillStyle = grad;
           g.fillRect(pad + i * cw - 0.5, h - t, cw + 1, t + 40);
         }

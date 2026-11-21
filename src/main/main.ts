@@ -55,6 +55,7 @@ function createWindow(): void {
     // No OS title bar or border: the app draws its own minimize / maximize / close buttons.
     frame: false,
     title: 'Bring Back Zune',
+    icon: path.join(__dirname, '..', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

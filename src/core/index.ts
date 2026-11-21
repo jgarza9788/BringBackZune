@@ -8,6 +8,7 @@ export * from './util';
 export * from './queue';
 export * from './quickplay';
 export * from './discovery';
+export * from './taste';
 export * from './settings';
 export { md5 } from './md5';
 export { DemoSource } from './demo';

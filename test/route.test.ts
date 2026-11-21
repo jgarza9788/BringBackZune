@@ -10,6 +10,8 @@ describe('routing', () => {
     { name: 'collection', tab: 'playlists' },
     { name: 'playlist', src: 'nd1', id: 'pl 1' },
     { name: 'artist', src: 'jf 1', id: 'a/b?c' },
+    { name: 'mixview', src: 'jf 1', id: 'a/b?c' },
+    { name: 'collection', tab: 'liked' },
     { name: 'album', src: 'nd1', id: 'al-9' },
     { name: 'search', q: 'sigur rós & more' },
   ];
@@ -19,7 +21,7 @@ describe('routing', () => {
   });
 
   it('falls back to quickplay on junk or incomplete hashes', () => {
-    for (const h of ['', '#', '#/nope', '#/artist/onlysrc', '#/mixview/s/artist/id', '#/album']) {
+    for (const h of ['', '#', '#/nope', '#/artist/onlysrc', '#/mixview', '#/mixview/onlysrc', '#/album']) {
       expect(parseHash(h)).toEqual({ name: 'quickplay' });
     }
     expect(parseHash('#/collection/zzz')).toEqual({ name: 'collection', tab: 'artists' });

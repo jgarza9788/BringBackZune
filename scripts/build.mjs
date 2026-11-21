@@ -47,4 +47,5 @@ await build({
 });
 
 await copyFile('src/renderer/index.html', 'dist/renderer/index.html');
+await copyFile('build/icon.png', 'dist/icon.png');
 console.log('build ok');

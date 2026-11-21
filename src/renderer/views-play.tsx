@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { formatTime, isPinned, type PinRef, type Track } from '../core';
+import { formatTime, isPinned, MAX_COVERS, type Layout, type PinRef, type Theme, type Track } from '../core';
 import { AlbumTile, ArtistTile } from './views-library';
 import {
   ACCENTS,
@@ -15,17 +15,22 @@ import {
   jumpTo,
   notify,
   npFull,
+  openMixview,
   player,
   reconnectSource,
   removeFromQueue,
   removeSource,
   requireSource,
   route,
+  saveQueueAsPlaylist,
   setAccent,
   setActiveSource,
+  setLayout,
+  setTheme,
   settings,
   togglePinned,
   togglePlay,
+  update,
   type NewSourceInput,
 } from './state';
 import { Art, Await, Eq, Icon, LikeButton, Section, TrackList, useAsync } from './ui';
@@ -101,7 +106,35 @@ function WallCover({ c }: { c: { src: string; id?: string; span: number } }): JS
   return <img class={`art m${c.span}`} src={url} alt="" loading="lazy" draggable={false} onError={() => setFailed(true)} />;
 }
 
+/** Name it, save "what's coming up" as a playlist. */
+function SaveQueue({ onDone }: { onDone(): void }): JSX.Element {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      class="np-save"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (busy || !name.trim()) return;
+        setBusy(true);
+        const made = await saveQueueAsPlaylist(name);
+        setBusy(false);
+        if (made) onDone();
+      }}
+    >
+      <input value={name} placeholder="playlist name" aria-label="Playlist name" autoFocus onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+      <button class="btn primary" type="submit" disabled={busy || !name.trim()}>
+        save
+      </button>
+      <button class="btn" type="button" onClick={onDone}>
+        cancel
+      </button>
+    </form>
+  );
+}
+
 export function NowPlaying(): JSX.Element {
+  const [saving, setSaving] = useState(false);
   const t = player.track.value;
   const idx = player.index.value;
   const queue = player.queue.value;
@@ -186,10 +219,19 @@ export function NowPlaying(): JSX.Element {
                 <Icon name="pin" size={20} />
               </button>
             )}
+            {t.artistId && (
+              <button class="ib" title="Mixview: related artists and albums" onClick={() => openMixview(t.src, t.artistId as string)}>
+                <Icon name="mix" size={20} />
+              </button>
+            )}
+            <button class={`ib ${saving ? 'on' : ''}`} title="Save the queue as a playlist" onClick={() => setSaving(!saving)}>
+              <Icon name="playlist-add" size={20} />
+            </button>
             <button class="ib" title="Full screen art" onClick={enterFull}>
               <Icon name="expand" size={20} />
             </button>
           </div>
+          {saving && <SaveQueue onDone={() => setSaving(false)} />}
         </div>
         <aside class="np-queue" ref={queueBox}>
           {queue.length === 0 ? (
@@ -443,6 +485,30 @@ export function SourcesView(): JSX.Element {
         </form>
       </Section>
 
+      <Section title="appearance">
+        <div class="setting">
+          <div class="setting-name">theme</div>
+          <div class="seg">
+            {(['dark', 'light', 'system'] as Theme[]).map((t) => (
+              <button type="button" key={t} class={s.theme === t ? 'on' : ''} onClick={() => setTheme(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div class="setting">
+          <div class="setting-name">collection layout</div>
+          <div class="seg">
+            {(['custom', 'classic'] as Layout[]).map((l) => (
+              <button type="button" key={l} class={s.layout === l ? 'on' : ''} onClick={() => setLayout(l)}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <p class="fine">custom: tiles for artists, albums and songs. classic: artists, albums and songs side by side, like the original Zune software.</p>
+        </div>
+      </Section>
+
       <Section title="colour">
         <div class="swatches">
           {ACCENTS.map((a) => (
@@ -456,6 +522,34 @@ export function SourcesView(): JSX.Element {
           ))}
         </div>
       </Section>
+
+      <Section title="privacy">
+        <p class="fine wide">
+          This app talks only to the servers you add here. No accounts, no analytics, no telemetry, and nothing is sent to anyone else. Your
+          password is used once to sign in and is never stored; only an access token is kept on this computer. Recommendations such as related
+          artists come from your own server (if it has Last.fm or similar set up, that is the server&apos;s business, not this app&apos;s).
+        </p>
+        <p class="fine wide">
+          Covers you change here stay on this computer ({Object.keys(s.covers).length} of {MAX_COVERS} used); the server is not touched. Smart DJ
+          remembers which artists you skip, in this computer&apos;s settings file only.
+        </p>
+        {Object.keys(s.taste.skips).length > 0 && (
+          <button
+            class="btn"
+            onClick={() => {
+              update((x) => (x.taste.skips = {}));
+              notify('Smart DJ forgot what you skipped');
+            }}
+          >
+            forget what I skipped
+          </button>
+        )}
+      </Section>
+
+      <p class="legal">
+        Bring Back Zune is an independent, unofficial project and is not affiliated with or endorsed by Microsoft. Zune is a trademark of Microsoft
+        Corporation.
+      </p>
     </div>
   );
 }

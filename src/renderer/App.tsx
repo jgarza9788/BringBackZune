@@ -20,16 +20,18 @@ import {
   toggleShuffle,
   togglePlay,
   type Route,
+  lastCollectionTab,
 } from './state';
 import { getBridge } from './bridge';
 import { Art, Icon, LikeButton } from './ui';
 import { AlbumPage, ArtistPage, Collection, PlaylistPage, Quickplay } from './views-library';
 import { Visualizer } from './visualizer';
+import { MixviewPage } from './views-mixview';
 import { NowPlaying, SearchView, SourcesView } from './views-play';
 
 const PIVOT: { label: string; match: Route['name'][]; to: Route }[] = [
   { label: 'quickplay', match: ['quickplay'], to: { name: 'quickplay' } },
-  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist'], to: { name: 'collection', tab: 'artists' } },
+  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist', 'mixview'], to: { name: 'collection', tab: 'artists' } },
   { label: 'now playing', match: ['nowplaying'], to: { name: 'nowplaying' } },
 ];
 
@@ -41,6 +43,8 @@ function View({ r }: { r: Route }): JSX.Element {
       return <Collection tab={r.tab} />;
     case 'artist':
       return <ArtistPage src={r.src} id={r.id} />;
+    case 'mixview':
+      return <MixviewPage src={r.src} id={r.id} />;
     case 'album':
       return <AlbumPage src={r.src} id={r.id} />;
     case 'playlist':
@@ -60,7 +64,7 @@ export function App(): JSX.Element {
   if (player.mini.value) return <Mini />;
 
   const r = route.value;
-  const detail = r.name === 'artist' || r.name === 'album' || r.name === 'playlist';
+  const detail = r.name === 'artist' || r.name === 'album' || r.name === 'playlist' || r.name === 'mixview';
   const sources = settings.value.sources;
   const active = activeConfig.value;
 
@@ -73,7 +77,7 @@ export function App(): JSX.Element {
         </button>
         <nav class="pivot">
           {PIVOT.map((p) => (
-            <a key={p.label} href={`#${hashOf(p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
+            <a key={p.label} href={`#${hashOf(p.to.name === 'collection' ? { name: 'collection', tab: lastCollectionTab.value } : p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
               {p.label}
             </a>
           ))}

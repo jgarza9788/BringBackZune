@@ -1,5 +1,5 @@
 import type { JSX } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   formatTime,
   MAX_PINS,
@@ -17,29 +17,37 @@ import {
 import {
   activeConfig,
   addDemoSource,
+  addToPlaylist,
   albumPin,
   artistPin,
   assignSmartDj,
   cached,
+  clearCover,
   clearSmartDj,
   enqueue,
   go,
+  hasOwnCover,
+  isFlipping,
   notify,
+  openMixview,
   openPin,
   player,
   playAlbum,
   playArtist,
+  playLikesMix,
   playlistPin,
   playPin,
   playPlaylist,
   playSmartDj,
   playTracks,
   requireSource,
+  setCover,
   settings,
   togglePinned,
   togglePlay,
 } from './state';
-import { Art, Await, Icon, Section, Tile, TrackList, useAsync } from './ui';
+import { coverFromFile } from './covers';
+import { Art, Await, Icon, Section, Tile, TrackList, useAsync, useDropZone } from './ui';
 
 /* ---------------------------------------------------------------- quickplay */
 
@@ -102,7 +110,14 @@ export function Quickplay(): JSX.Element {
       </Section>
 
       <div class="qp-right">
-        <Section title="smart dj">
+        <Section
+          title="smart dj"
+          right={
+            <button class="btn small" title="A mix built from the songs you have liked" onClick={() => void playLikesMix(cfg.id)}>
+              <Icon name="heart" size={14} /> from my likes
+            </button>
+          }
+        >
           <div class="row-grid five">
             {Array.from({ length: SMART_DJ_SLOTS }, (_, i) => {
               const seed = qp.smartDj[i];
@@ -230,27 +245,40 @@ export function ArtistTile({ artist, i = 0 }: { artist: Artist; i?: number }): J
 
 /* ---------------------------------------------------------------- collection */
 
-type Tab = 'artists' | 'albums' | 'playlists' | 'songs';
+type Tab = 'artists' | 'albums' | 'playlists' | 'songs' | 'liked';
 
 export function Collection({ tab }: { tab: Tab }): JSX.Element {
   const cfg = activeConfig.value;
+  const classic = settings.value.layout === 'classic';
+  // Classic folds artists / albums / songs into one three-column library.
+  const tabs: { label: string; to: Tab; on: boolean }[] = classic
+    ? [
+        { label: 'library', to: 'artists', on: tab === 'artists' || tab === 'albums' || tab === 'songs' },
+        { label: 'playlists', to: 'playlists', on: tab === 'playlists' },
+        { label: 'liked', to: 'liked', on: tab === 'liked' },
+      ]
+    : (['artists', 'albums', 'playlists', 'songs', 'liked'] as Tab[]).map((t) => ({ label: t, to: t, on: t === tab }));
   return (
     <div class="collection">
       <nav class="subpivot">
-        {(['artists', 'albums', 'playlists', 'songs'] as Tab[]).map((t) => (
-          <a key={t} class={t === tab ? 'active' : ''} href={`#/collection/${t}`}>
-            {t}
+        {tabs.map((t) => (
+          <a key={t.label} class={t.on ? 'active' : ''} href={`#/collection/${t.to}`}>
+            {t.label}
           </a>
         ))}
       </nav>
       {!cfg ? (
         <div class="status">add a server in “sources” to see your collection</div>
+      ) : tab === 'playlists' ? (
+        <PlaylistsTab srcId={cfg.id} />
+      ) : tab === 'liked' ? (
+        <LikedTab srcId={cfg.id} />
+      ) : classic ? (
+        <ClassicLibrary srcId={cfg.id} />
       ) : tab === 'artists' ? (
         <ArtistsTab srcId={cfg.id} />
       ) : tab === 'albums' ? (
         <AlbumsTab srcId={cfg.id} />
-      ) : tab === 'playlists' ? (
-        <PlaylistsTab srcId={cfg.id} />
       ) : (
         <SongsTab srcId={cfg.id} />
       )}
@@ -315,6 +343,20 @@ function ArtistsTab({ srcId }: { srcId: string }): JSX.Element {
   );
 }
 
+const remembered = new Map<string, unknown>();
+/** useState that survives the view unmounting, so leaving the collection and coming back keeps its sort. */
+function useRemembered<T>(key: string, initial: T): [T, (v: T | ((cur: T) => T)) => void] {
+  const [v, set] = useState<T>(() => (remembered.has(key) ? (remembered.get(key) as T) : initial));
+  return [
+    v,
+    (next) => {
+      const resolved = typeof next === 'function' ? (next as (cur: T) => T)(v) : next;
+      remembered.set(key, resolved);
+      set(resolved);
+    },
+  ];
+}
+
 const PAGE = 120;
 
 function usePaged<T>(load: (offset: number, limit: number) => Promise<T[]>, deps: unknown[]) {
@@ -360,7 +402,7 @@ function MoreButton(p: { done: boolean; busy: boolean; error?: string; more(): v
 }
 
 function AlbumsTab({ srcId }: { srcId: string }): JSX.Element {
-  const [sort, setSort] = useState<'name' | 'recent' | 'artist'>('name');
+  const [sort, setSort] = useRemembered<'name' | 'recent' | 'artist'>('albums-sort', 'name');
   const p = usePaged((offset, limit) => requireSource(srcId).getAlbums(sort, { offset, limit }), [srcId, sort]);
   return (
     <>
@@ -394,7 +436,7 @@ const sortPlaylists = (lists: Playlist[], by: PlaylistSort): Playlist[] => {
 
 function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
   const st = useAsync(() => cached(`playlists:${srcId}`, () => requireSource(srcId).getPlaylists()), [srcId]);
-  const [sort, setSort] = useState<PlaylistSort>('name');
+  const [sort, setSort] = useRemembered<PlaylistSort>('playlists-sort', 'name');
   return (
     <Await state={st}>
       {(all) => {
@@ -436,48 +478,269 @@ function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
 
 export function PlaylistPage({ src, id }: { src: string; id: string }): JSX.Element {
   const st = useAsync(() => requireSource(src).getPlaylist(id), [src, id]);
+  return <Await state={st}>{({ playlist, tracks }) => <PlaylistBody playlist={playlist} tracks={tracks} reload={st.reload} />}</Await>;
+}
+
+function PlaylistBody({ playlist, tracks, reload }: { playlist: Playlist; tracks: Track[]; reload(): void }): JSX.Element {
+  const src = playlist.src;
+  const [adding, setAdding] = useState(false);
+  const total = tracks.reduce((n, t) => n + t.durationSec, 0);
+  const pin = playlistPin(playlist);
+  const pinned = isPinned(settings.value.quickplay, pin);
+  const coverId = playlist.imageId ?? `own:${playlist.id}`;
+  const drop = useDropZone((dropped) => {
+    void addToPlaylist(playlist, dropped).then((ok) => ok && reload());
+  });
+  return (
+    <div class="detail">
+      <div class="hero">
+        <Art src={src} id={coverId} label={playlist.name} size={600} class={`hero-art ${isFlipping(src, coverId) ? 'flip' : ''}`} />
+        <div class="hero-info">
+          <div class="kicker">playlist</div>
+          <h1>{playlist.name}</h1>
+          <div class="meta">
+            {tracks.length} song{tracks.length === 1 ? '' : 's'} · {formatTime(total)}
+          </div>
+          <div class="actions">
+            <button class="btn primary" onClick={() => playTracks(tracks, 0, { shuffle: false })}>
+              <Icon name="play" size={18} /> play
+            </button>
+            <button class="btn" onClick={() => playTracks(tracks, 0, { shuffle: true })}>
+              <Icon name="shuffle" size={18} /> shuffle
+            </button>
+            <button class="btn" onClick={() => enqueue(tracks)}>
+              <Icon name="plus" size={18} /> add to now playing
+            </button>
+            <button class={`btn ${adding ? 'on' : ''}`} onClick={() => setAdding(!adding)}>
+              <Icon name="playlist-add" size={18} /> add songs
+            </button>
+            <button class={`btn ${pinned ? 'on' : ''}`} onClick={() => togglePinned(pin)}>
+              <Icon name="pin" size={18} /> {pinned ? 'pinned' : 'pin'}
+            </button>
+            <CoverActions src={src} id={coverId} />
+          </div>
+        </div>
+      </div>
+      {adding && <AddSongsPanel playlist={playlist} onAdded={reload} />}
+      <div {...drop.props} class={`drop-area ${drop.over ? 'over' : ''}`}>
+        <TrackList tracks={tracks} showArtist showAlbum />
+        {drop.over && <div class="drop-hint">drop to add to “{playlist.name}”</div>}
+      </div>
+    </div>
+  );
+}
+
+/** Pick songs from your likes, a search, or the queue and add them here (rows can also be dragged onto the list below). */
+function AddSongsPanel({ playlist, onAdded }: { playlist: Playlist; onAdded(): void }): JSX.Element {
+  const src = playlist.src;
+  const [tab, setTab] = useState<'liked' | 'search' | 'queue'>('liked');
+  const [q, setQ] = useState('');
+  const [term, setTerm] = useState('');
+  useEffect(() => {
+    const h = window.setTimeout(() => setTerm(q.trim()), 300);
+    return () => window.clearTimeout(h);
+  }, [q]);
+  const liked = useAsync(() => (tab === 'liked' ? requireSource(src).getLikedTracks(200) : Promise.resolve([] as Track[])), [src, tab]);
+  const found = useAsync(() => (tab === 'search' && term ? requireSource(src).search(term).then((r) => r.tracks) : Promise.resolve([] as Track[])), [src, tab, term]);
+  const rows = tab === 'liked' ? liked.data : tab === 'search' ? found.data : player.queue.value.filter((t) => t.src === src);
+  const error = tab === 'liked' ? liked.error : tab === 'search' ? found.error : undefined;
+  return (
+    <div class="add-panel">
+      <div class="chips">
+        {(['liked', 'search', 'queue'] as const).map((t) => (
+          <button key={t} class={`chip ${t === tab ? 'on' : ''}`} onClick={() => setTab(t)}>
+            {t === 'queue' ? 'now playing' : t}
+          </button>
+        ))}
+        {tab === 'search' && (
+          <input class="add-search" type="search" placeholder="search songs" aria-label="Search songs to add" value={q} autoFocus onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
+        )}
+      </div>
+      {error ? (
+        <div class="status error">{error}</div>
+      ) : rows === undefined ? (
+        <div class="status">loading…</div>
+      ) : rows.length === 0 ? (
+        <div class="status">{tab === 'liked' ? 'no liked songs yet' : tab === 'search' ? (term ? 'no songs found' : 'type to search') : 'nothing in now playing'}</div>
+      ) : (
+        <div class="add-rows">
+          <TrackList
+            tracks={rows}
+            showArtist
+            actions={(t) => (
+              <button title={`Add to ${playlist.name}`} onClick={() => void addToPlaylist(playlist, [t]).then((ok) => ok && onAdded())}>
+                <Icon name="plus" size={16} />
+              </button>
+            )}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Replace a cover on this computer (the server is not changed), or put the original back. */
+function CoverActions({ src, id }: { src: string; id: string | undefined }): JSX.Element | null {
+  const input = useRef<HTMLInputElement>(null);
+  if (!id) return null;
+  const own = hasOwnCover(src, id);
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const el = e.target as HTMLInputElement;
+          const file = el.files?.[0];
+          el.value = '';
+          if (!file) return;
+          try {
+            setCover(src, id, await coverFromFile(file));
+            notify('Cover changed on this computer');
+          } catch (err) {
+            notify((err as Error).message, 'error');
+          }
+        }}
+      />
+      <button class="btn" title="Use your own image for this cover (stays on this computer)" onClick={() => input.current?.click()}>
+        <Icon name="expand" size={18} /> change cover
+      </button>
+      {own && (
+        <button class="btn" onClick={() => clearCover(src, id)}>
+          reset cover
+        </button>
+      )}
+    </>
+  );
+}
+
+function LikedTab({ srcId }: { srcId: string }): JSX.Element {
+  const st = useAsync(() => requireSource(srcId).getLikedTracks(500), [srcId]);
   return (
     <Await state={st}>
-      {({ playlist, tracks }) => {
-        const total = tracks.reduce((n, t) => n + t.durationSec, 0);
-        const pin = playlistPin(playlist);
-        const pinned = isPinned(settings.value.quickplay, pin);
-        return (
-          <div class="detail">
-            <div class="hero">
-              <Art src={src} id={playlist.imageId} label={playlist.name} size={600} class="hero-art" />
-              <div class="hero-info">
-                <div class="kicker">playlist</div>
-                <h1>{playlist.name}</h1>
-                <div class="meta">
-                  {tracks.length} song{tracks.length === 1 ? '' : 's'} · {formatTime(total)}
-                </div>
-                <div class="actions">
-                  <button class="btn primary" onClick={() => playTracks(tracks, 0, { shuffle: false })}>
-                    <Icon name="play" size={18} /> play
-                  </button>
-                  <button class="btn" onClick={() => playTracks(tracks, 0, { shuffle: true })}>
-                    <Icon name="shuffle" size={18} /> shuffle
-                  </button>
-                  <button class="btn" onClick={() => enqueue(tracks)}>
-                    <Icon name="plus" size={18} /> add to now playing
-                  </button>
-                  <button class={`btn ${pinned ? 'on' : ''}`} onClick={() => togglePinned(pin)}>
-                    <Icon name="pin" size={18} /> {pinned ? 'pinned' : 'pin'}
-                  </button>
-                </div>
-              </div>
+      {(tracks) =>
+        tracks.length === 0 ? (
+          <div class="status">no liked songs yet. use the heart next to a song</div>
+        ) : (
+          <>
+            <div class="actions top">
+              <button class="btn primary" onClick={() => playTracks(tracks, 0, { shuffle: false })}>
+                <Icon name="play" size={18} /> play
+              </button>
+              <button class="btn" onClick={() => playTracks(tracks, 0, { shuffle: true })}>
+                <Icon name="shuffle" size={18} /> shuffle
+              </button>
+              <button class="btn" onClick={() => void playLikesMix(srcId)}>
+                <Icon name="dj" size={18} /> smart dj from likes
+              </button>
             </div>
             <TrackList tracks={tracks} showArtist showAlbum />
-          </div>
-        );
-      }}
+          </>
+        )
+      }
     </Await>
   );
 }
 
+/** The classic Zune library: artists, then that artist's albums, then that album's songs, side by side. */
+function ClassicLibrary({ srcId }: { srcId: string }): JSX.Element {
+  const [artistId, setArtistId] = useState<string>();
+  const [albumId, setAlbumId] = useState<string>();
+  useEffect(() => {
+    setArtistId(undefined);
+    setAlbumId(undefined);
+  }, [srcId]);
+  const artists = useAsync(() => cached(`artists:${srcId}`, () => requireSource(srcId).getArtists()), [srcId]);
+  const albums = useAsync(() => (artistId ? requireSource(srcId).getArtist(artistId).then((r) => r.albums) : Promise.resolve([] as Album[])), [srcId, artistId]);
+  const album = useAsync(() => (albumId ? requireSource(srcId).getAlbum(albumId) : Promise.resolve(undefined)), [srcId, albumId]);
+  const sorted = [...(artists.data ?? [])].sort((a, b) => a.name.replace(/^the\s+/i, '').localeCompare(b.name.replace(/^the\s+/i, ''), undefined, { sensitivity: 'base' }));
+  const tracks = albumId ? (album.data?.tracks ?? []) : [];
+  return (
+    <div class="classic">
+      <div class="classic-col">
+        <h3>artists</h3>
+        {artists.error ? (
+          <div class="status error">{artists.error}</div>
+        ) : artists.data === undefined ? (
+          <div class="status">loading…</div>
+        ) : (
+          <ul>
+            {sorted.map((a) => (
+              <li key={a.id}>
+                <button
+                  class={a.id === artistId ? 'on' : ''}
+                  onClick={() => {
+                    setArtistId(a.id);
+                    setAlbumId(undefined);
+                  }}
+                  onDblClick={() => void playArtist(srcId, a.id)}
+                >
+                  {a.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div class="classic-col">
+        <h3>albums</h3>
+        {!artistId ? (
+          <div class="status">pick an artist</div>
+        ) : albums.error ? (
+          <div class="status error">{albums.error}</div>
+        ) : albums.data === undefined ? (
+          <div class="status">loading…</div>
+        ) : albums.data.length === 0 ? (
+          <div class="status">no albums</div>
+        ) : (
+          <ul>
+            {albums.data.map((a) => (
+              <li key={a.id}>
+                <button class={`with-art ${a.id === albumId ? 'on' : ''}`} onClick={() => setAlbumId(a.id)} onDblClick={() => void playAlbum(srcId, a.id)}>
+                  <Art src={srcId} id={a.imageId} label={a.title} size={80} class="classic-art" />
+                  <span>
+                    {a.title}
+                    {a.year ? <small>{a.year}</small> : null}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div class="classic-col wide">
+        <h3>songs</h3>
+        {!albumId ? (
+          <div class="status">pick an album</div>
+        ) : album.error ? (
+          <div class="status error">{album.error}</div>
+        ) : album.data === undefined ? (
+          <div class="status">loading…</div>
+        ) : (
+          <>
+            <div class="actions top">
+              <button class="btn primary" onClick={() => playTracks(tracks, 0, { shuffle: false })}>
+                <Icon name="play" size={18} /> play
+              </button>
+              <button class="btn" onClick={() => playTracks(tracks, 0, { shuffle: true })}>
+                <Icon name="shuffle" size={18} /> shuffle
+              </button>
+              <button class="btn" onClick={() => enqueue(tracks)}>
+                <Icon name="plus" size={18} /> add to now playing
+              </button>
+            </div>
+            <TrackList tracks={tracks} numbered />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SongsTab({ srcId }: { srcId: string }): JSX.Element {
-  const [sort, setSort] = useState<TrackSort>({ by: 'title' });
+  const [sort, setSort] = useRemembered<TrackSort>('songs-sort', { by: 'title' });
   const source = requireSource(srcId);
   // Servers that can sort do it themselves (so paging stays correct); otherwise we sort what has loaded so far.
   const p = usePaged((offset, limit) => source.getTracks({ offset, limit, sort }), [srcId, sort.by, sort.desc]);
@@ -527,7 +790,7 @@ export function ArtistPage({ src, id }: { src: string; id: string }): JSX.Elemen
         return (
           <div class="detail">
             <div class="hero">
-              <Art src={src} id={artist.imageId} label={artist.name} size={500} class="hero-art" />
+              <Art src={src} id={artist.imageId} label={artist.name} size={500} class={`hero-art ${isFlipping(src, artist.imageId) ? 'flip' : ''}`} />
               <div class="hero-info">
                 <div class="kicker">artist</div>
                 <h1>{artist.name}</h1>
@@ -547,6 +810,10 @@ export function ArtistPage({ src, id }: { src: string; id: string }): JSX.Elemen
                   <button class={`btn ${pinned ? 'on' : ''}`} onClick={() => togglePinned(pin)}>
                     <Icon name="pin" size={18} /> {pinned ? 'pinned' : 'pin'}
                   </button>
+                  <button class="btn" title="Related artists and albums around this one" onClick={() => openMixview(src, id)}>
+                    <Icon name="mix" size={18} /> mixview
+                  </button>
+                  <CoverActions src={src} id={artist.imageId} />
                 </div>
               </div>
             </div>
@@ -582,7 +849,7 @@ export function AlbumPage({ src, id }: { src: string; id: string }): JSX.Element
         return (
           <div class="detail">
             <div class="hero">
-              <Art src={src} id={album.imageId} label={album.title} size={600} class="hero-art" />
+              <Art src={src} id={album.imageId} label={album.title} size={600} class={`hero-art ${isFlipping(src, album.imageId) ? 'flip' : ''}`} />
               <div class="hero-info">
                 <div class="kicker">album</div>
                 <h1>{album.title}</h1>
@@ -610,6 +877,12 @@ export function AlbumPage({ src, id }: { src: string; id: string }): JSX.Element
                   <button class={`btn ${pinned ? 'on' : ''}`} onClick={() => togglePinned(pin)}>
                     <Icon name="pin" size={18} /> {pinned ? 'pinned' : 'pin'}
                   </button>
+                  {album.artistId && (
+                    <button class="btn" title="Related artists and albums around this artist" onClick={() => openMixview(src, album.artistId as string)}>
+                      <Icon name="mix" size={18} /> mixview
+                    </button>
+                  )}
+                  <CoverActions src={src} id={album.imageId} />
                 </div>
               </div>
             </div>

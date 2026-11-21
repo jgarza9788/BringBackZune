@@ -170,6 +170,27 @@ export class SubsonicSource implements MusicSource {
     await this.call(on ? 'star' : 'unstar', { id: trackId });
   }
 
+  async getLikedTracks(limit: number): Promise<Track[]> {
+    const r = await this.call<{ starred2?: { song?: SsSong[] } }>('getStarred2');
+    return arr(r.starred2?.song)
+      .slice(0, limit)
+      .map((s) => this.track({ ...s, starred: s.starred ?? 'yes' }));
+  }
+
+  async createPlaylist(name: string, trackIds: string[]): Promise<Playlist> {
+    const r = await this.call<{ playlist?: SsPlaylist }>('createPlaylist', { name, songId: trackIds });
+    if (r.playlist) return this.playlist(r.playlist);
+    // Older servers answer with a bare "ok" and no playlist: find it by name.
+    const found = (await this.getPlaylists()).find((p) => p.name === name);
+    if (!found) throw new SourceError('The server did not say which playlist it created', 'protocol');
+    return found;
+  }
+
+  async addToPlaylist(playlistId: string, trackIds: string[]): Promise<void> {
+    if (trackIds.length === 0) return;
+    await this.call('updatePlaylist', { playlistId, songIdToAdd: trackIds });
+  }
+
   // ---- library ----------------------------------------------------------
 
   async getArtists(): Promise<Artist[]> {

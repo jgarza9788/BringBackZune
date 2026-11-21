@@ -136,6 +136,32 @@ export class DemoSource implements MusicSource {
     if (t) t.liked = on;
   }
 
+  /** Playlists made through the app (in memory only: the demo library is not persisted). */
+  private readonly made: { playlist: Playlist; tracks: Track[] }[] = [];
+
+  async getLikedTracks(limit: number): Promise<Track[]> {
+    return this.allTracks().filter((t) => t.liked).slice(0, limit);
+  }
+
+  async createPlaylist(name: string, trackIds: string[]): Promise<Playlist> {
+    const tracks = this.pick(trackIds);
+    const playlist: Playlist = { src: this.config.id, id: `pl-made-${this.made.length + 1}`, name, trackCount: tracks.length, imageId: tracks[0]?.albumId };
+    this.made.push({ playlist, tracks });
+    return playlist;
+  }
+
+  async addToPlaylist(playlistId: string, trackIds: string[]): Promise<void> {
+    const d = this.made.find((x) => x.playlist.id === playlistId);
+    if (!d) throw new SourceError('Only playlists made in the demo library can be changed', 'server', 405);
+    d.tracks.push(...this.pick(trackIds));
+    d.playlist.trackCount = d.tracks.length;
+  }
+
+  private pick(ids: string[]): Track[] {
+    const byId = new Map(this.allTracks().map((t) => [t.id, t]));
+    return ids.flatMap((id) => byId.get(id) ?? []);
+  }
+
   private allTracks(): Track[] {
     return [...this.data.tracksByAlbum.values()].flat();
   }
@@ -170,18 +196,22 @@ export class DemoSource implements MusicSource {
       ['Late Night', all.filter((_, i) => i % 13 === 2)],
       ['Favourites', all.filter((_, i) => i % 17 === 5)],
     ];
-    return defs.map(([name, tracks]) => ({
-      playlist: { src: this.config.id, id: `pl-${name.toLowerCase().replace(/\s+/g, '-')}`, name, trackCount: tracks.length, imageId: tracks[0]?.albumId },
-      tracks,
-    }));
+    return [
+      ...defs.map(([name, tracks]) => ({
+        playlist: { src: this.config.id, id: `pl-${name.toLowerCase().replace(/\s+/g, '-')}`, name, trackCount: tracks.length, imageId: tracks[0]?.albumId },
+        tracks,
+      })),
+      ...this.made,
+    ];
   }
   async getPlaylists(): Promise<Playlist[]> {
-    return this.playlistDefs().map((d) => d.playlist);
+    return this.playlistDefs().map((d) => ({ ...d.playlist }));
   }
   async getPlaylist(id: string) {
     const d = this.playlistDefs().find((x) => x.playlist.id === id);
     if (!d) throw new SourceError('Playlist not found', 'server', 404);
-    return d;
+    // Copies, like a real server's fresh response: the UI skips re-rendering when it is handed the same array again.
+    return { playlist: { ...d.playlist }, tracks: d.tracks.slice() };
   }
   async getTracks(page: TrackPage = {}): Promise<Track[]> {
     const list = sortTracks(this.allTracks(), page.sort ?? { by: 'title' });

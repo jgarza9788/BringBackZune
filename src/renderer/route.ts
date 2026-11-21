@@ -2,8 +2,9 @@
 
 export type Route =
   | { name: 'quickplay' }
-  | { name: 'collection'; tab: 'artists' | 'albums' | 'playlists' | 'songs' }
+  | { name: 'collection'; tab: 'artists' | 'albums' | 'playlists' | 'songs' | 'liked' }
   | { name: 'artist'; src: string; id: string }
+  | { name: 'mixview'; src: string; id: string }
   | { name: 'playlist'; src: string; id: string }
   | { name: 'album'; src: string; id: string }
   | { name: 'nowplaying' }
@@ -21,6 +22,7 @@ export function hashFor(r: Route): string {
     case 'collection':
       return `#/collection/${r.tab}`;
     case 'artist':
+    case 'mixview':
     case 'album':
     case 'playlist':
       return `#/${r.name}/${enc(r.src)}/${enc(r.id)}`;
@@ -34,8 +36,9 @@ export function parseHash(hash: string): Route {
   const [a, b, c] = parts;
   switch (a) {
     case 'collection':
-      return { name: 'collection', tab: b === 'albums' || b === 'playlists' || b === 'songs' ? b : 'artists' };
+      return { name: 'collection', tab: b === 'albums' || b === 'playlists' || b === 'songs' || b === 'liked' ? b : 'artists' };
     case 'artist':
+    case 'mixview':
     case 'album':
     case 'playlist':
       return b && c ? { name: a, src: b, id: c } : { name: 'quickplay' };

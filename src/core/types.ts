@@ -130,6 +130,12 @@ export interface MusicSource {
   getTopTracks(artist: Artist, limit: number): Promise<Track[]>;
   /** Like (favourite / star) or unlike a track on the server. Throws SourceError. */
   setFavorite(trackId: string, on: boolean): Promise<void>;
+  /** The user's liked / starred songs, newest page first as far as the server says. */
+  getLikedTracks(limit: number): Promise<Track[]>;
+  /** Create a playlist holding `trackIds`. Throws SourceError. */
+  createPlaylist(name: string, trackIds: string[]): Promise<Playlist>;
+  /** Append tracks to an existing playlist. Throws SourceError. */
+  addToPlaylist(playlistId: string, trackIds: string[]): Promise<void>;
 
   streamUrl(track: Track): string;
   imageUrl(imageId: string | undefined, size: number, kind?: 'primary' | 'backdrop'): string | undefined;

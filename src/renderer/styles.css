@@ -1,6 +1,8 @@
 /* Metro-inspired theme: black canvas, big light typography, flat tiles, one accent colour, purposeful motion. */
 :root {
   --accent: #d80073;
+  /* the accent drifting toward orange, as in the glow's outer edge and the slider fills */
+  --warm: color-mix(in srgb, var(--accent) 55%, #ff8a2a);
   --bg: #000;
   --fg: #fff;
   --dim: rgba(255, 255, 255, 0.55);
@@ -723,7 +725,7 @@ h1 {
 }
 .track {
   display: grid;
-  grid-template-columns: 44px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 120px 56px;
+  grid-template-columns: 44px minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr) 150px 56px;
   align-items: center;
   gap: 14px;
   padding: 0 8px;
@@ -852,7 +854,7 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 .tracks:not(:has(.track-artist)) .track {
-  grid-template-columns: 44px minmax(0, 1fr) 120px 56px;
+  grid-template-columns: 44px minmax(0, 1fr) 150px 56px;
 }
 
 /* ---------------------------------------------------------------- bottom bar */
@@ -1022,7 +1024,7 @@ input[type='range'] {
 }
 input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
-  background: linear-gradient(to right, var(--accent) var(--pct, 0%), var(--track) var(--pct, 0%));
+  background: linear-gradient(to right, var(--accent), var(--warm) var(--pct, 0%), var(--track) var(--pct, 0%));
 }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -1138,8 +1140,8 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   z-index: 0;
   left: 50%;
   bottom: 0;
-  width: min(54vw, 1100px);
-  height: clamp(44px, 5.8vh, 78px);
+  width: min(50vw, 900px);
+  height: clamp(60px, 8vh, 108px);
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -1757,3 +1759,540 @@ input:focus {
   }
 }
 
+
+/* ---------------------------------------------------------------- light theme */
+/* Dark is the default. Light re-colours the pages; the player bar, Now Playing and the mini player stay dark
+   because the cover wall, the glow and the visualiser are drawn for a black canvas. */
+:root {
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f6f6;
+  --fg: #111;
+  --dim: rgba(0, 0, 0, 0.58);
+  --faint: rgba(0, 0, 0, 0.12);
+  --tile: #e2e2e2;
+  --line: rgba(0, 0, 0, 0.55);
+  --faint2: rgba(0, 0, 0, 0.24);
+  --hover: rgba(0, 0, 0, 0.06);
+  --thumb: rgba(0, 0, 0, 0.25);
+  --field-bg: #fff;
+  --field-fg: #000;
+  --panel: #ebebeb;
+  --hi: #000;
+  --track: rgba(0, 0, 0, 0.2);
+  --knob: #111;
+}
+:root[data-theme='light'] :is(.bar, .mini, .shell.route-nowplaying, .shell.route-mixview) {
+  color-scheme: dark;
+  --bg: #000;
+  --fg: #fff;
+  --dim: rgba(255, 255, 255, 0.55);
+  --faint: rgba(255, 255, 255, 0.12);
+  --tile: #1c1c1c;
+  --line: rgba(255, 255, 255, 0.6);
+  --faint2: rgba(255, 255, 255, 0.2);
+  --hover: rgba(255, 255, 255, 0.06);
+  --thumb: rgba(255, 255, 255, 0.22);
+  --panel: #141414;
+  --bar: #0b0b0b;
+  --hi: #fff;
+  --track: rgba(255, 255, 255, 0.25);
+  --knob: #fff;
+  color: var(--fg);
+}
+:root[data-theme='light'] :is(.mini, .shell.route-nowplaying, .shell.route-mixview) {
+  background: #000;
+}
+:root[data-theme='light'] .status.error,
+:root[data-theme='light'] .form-error {
+  color: #b3261e;
+}
+:root[data-theme='light'] .head-search input {
+  background: var(--hover);
+}
+
+/* ---------------------------------------------------------------- small controls */
+.btn.small {
+  padding: 3px 12px;
+  font-size: 13px;
+  border-width: 1px;
+  align-self: center;
+}
+.actions.top {
+  margin: 0 0 16px;
+}
+.setting {
+  margin-bottom: 18px;
+  max-width: 460px;
+}
+.setting-name {
+  color: var(--dim);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.setting .fine {
+  margin-top: 8px;
+}
+.fine.wide {
+  max-width: 640px;
+  line-height: 1.55;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.legal {
+  color: var(--dim);
+  font-size: 12px;
+  max-width: 640px;
+  margin: 4px 0 24px;
+}
+
+/* ---------------------------------------------------------------- add to playlist */
+.pl-menu {
+  position: fixed;
+  z-index: 60;
+  width: 260px;
+  max-height: 330px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--faint2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: fadein 0.12s both;
+}
+.pl-menu-h {
+  padding: 10px 12px 6px;
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.pl-new {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+.pl-new input {
+  padding: 6px 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+.pl-new .btn {
+  width: auto;
+  height: auto;
+  display: inline-flex;
+  padding: 3px 10px;
+  font-size: 13px;
+  border-width: 1px;
+}
+.pl-menu ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--faint);
+}
+.pl-menu li button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 14px;
+  opacity: 1;
+}
+.pl-menu li button:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+.pl-menu li button span {
+  color: var(--dim);
+  font-size: 12px;
+}
+.pl-menu li button:hover span {
+  color: inherit;
+}
+.pl-note {
+  padding: 10px 12px;
+  color: var(--dim);
+  font-size: 13px;
+}
+.pl-menu .btn {
+  opacity: 1;
+}
+
+/* dragging songs onto a playlist */
+.drop-area {
+  position: relative;
+  outline: 2px dashed transparent;
+  outline-offset: 6px;
+  transition: outline-color 0.12s;
+}
+.drop-area.over {
+  outline-color: var(--accent);
+}
+.drop-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--accent);
+  font-size: 22px;
+  font-weight: 300;
+  pointer-events: none;
+}
+.add-panel {
+  background: var(--panel);
+  border: 1px solid var(--faint);
+  padding: 14px 16px;
+  margin-bottom: 22px;
+}
+.add-panel .chips {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.add-search {
+  background: var(--field-bg);
+  color: var(--field-fg);
+  border: 1px solid var(--faint2);
+  padding: 6px 10px;
+  font-size: 14px;
+  width: 260px;
+  max-width: 100%;
+  margin-left: 6px;
+  user-select: text;
+}
+.add-rows {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.np-save {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  max-width: 420px;
+}
+.np-save input {
+  flex: 1;
+  min-width: 0;
+}
+.np-save .btn {
+  padding: 6px 14px;
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- cover flip */
+@keyframes flip {
+  0% {
+    transform: perspective(700px) rotateY(0);
+  }
+  45% {
+    transform: perspective(700px) rotateY(88deg);
+    opacity: 0.5;
+  }
+  100% {
+    transform: perspective(700px) rotateY(0);
+    opacity: 1;
+  }
+}
+.hero-art.flip {
+  animation: flip 0.6s var(--ease);
+}
+
+/* ---------------------------------------------------------------- mixview */
+.mix {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 215px);
+  min-height: 480px;
+}
+.mix-mark {
+  position: absolute;
+  right: 0;
+  top: -0.1em;
+  font-size: clamp(60px, 11vw, 190px);
+  font-weight: 300;
+  letter-spacing: -3px;
+  line-height: 1;
+  color: var(--fg);
+  opacity: 0.07;
+  pointer-events: none;
+}
+.mix-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.mix-link {
+  color: var(--fg);
+}
+.mix-link:hover {
+  color: var(--accent);
+}
+.mix-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--faint2);
+}
+.mix-trail {
+  position: relative;
+  margin: 6px 0 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dim);
+}
+.mix-trail a:hover {
+  color: var(--accent);
+}
+.mix-trail b {
+  color: var(--fg);
+}
+.mix-trail .sep {
+  opacity: 0.6;
+}
+.mix-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  container-type: size;
+  overflow: hidden;
+}
+.mix-tile {
+  position: absolute;
+  left: calc(50cqw + var(--dx) * 1cqmin);
+  top: calc(50cqh + var(--dy) * 1cqmin);
+  width: calc(var(--s) * 1cqmin);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  padding: 0;
+  overflow: hidden;
+  color: #fff;
+  background: var(--tile);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  animation: mix-in 0.55s var(--ease) backwards;
+  animation-delay: calc(var(--i) * 45ms);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s;
+}
+.mix-tile:hover,
+.mix-tile:focus-visible {
+  transform: translate(-50%, -50%) scale(1.07);
+  z-index: 4;
+  box-shadow: 0 0 0 3px var(--accent), 0 12px 34px rgba(0, 0, 0, 0.7);
+}
+.mix-tile .art {
+  width: 100%;
+  height: 100%;
+}
+.mix-tile::after {
+  content: '';
+  position: absolute;
+  inset: 40% 0 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.78));
+  pointer-events: none;
+}
+.mix-label {
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  right: 6px;
+  bottom: 6px;
+  text-align: left;
+  font-weight: 700;
+  font-size: clamp(10px, calc(var(--s) * 0.085cqmin), 22px);
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  overflow-wrap: anywhere;
+}
+.mix-dj {
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background: linear-gradient(140deg, var(--accent), #ff9a3c);
+  font-weight: 700;
+  font-size: clamp(10px, calc(var(--s) * 0.085cqmin), 18px);
+  text-transform: uppercase;
+}
+.mix-dj::after {
+  display: none;
+}
+.mix-core {
+  position: absolute;
+  left: calc(50% - 27cqmin);
+  top: calc(50% - 27cqmin);
+  width: 54cqmin;
+  z-index: 3;
+  background: #1a1a1a;
+  color: #fff;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.75);
+  animation: mix-core-in 0.5s var(--ease) backwards;
+}
+.mix-cover {
+  width: 100%;
+  aspect-ratio: 1;
+}
+.mix-cover .art {
+  width: 100%;
+  height: 100%;
+}
+.mix-cap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  font-size: clamp(13px, 2.2cqmin, 20px);
+  min-width: 0;
+}
+.mix-cap b {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.mix-cap span {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 300;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.mix-play {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+}
+.mix-play:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+@keyframes mix-in {
+  from {
+    opacity: 0;
+    transform: translate(calc(-50% - var(--dx) * 0.55cqmin), calc(-50% - var(--dy) * 0.55cqmin)) scale(0.45);
+  }
+}
+@keyframes mix-core-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+@media (max-width: 720px) {
+  .mix-mark {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- classic library */
+.classic {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(210px, 1.2fr) minmax(0, 2.4fr);
+  gap: 26px;
+  height: calc(100vh - 290px);
+  min-height: 320px;
+}
+.classic-col {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.classic-col h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 6px;
+  padding: 2px 0 6px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 300;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.classic-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.classic-col li button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 17px;
+  font-weight: 300;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.classic-col li button:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.classic-col li button.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+.classic-col li button.with-art {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.classic-art {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+.classic-col li button.with-art span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.classic-col li button small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+}
+@media (max-width: 900px) {
+  .classic {
+    grid-template-columns: 1fr 1fr;
+  }
+  .classic-col.wide {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Text on an accent-coloured surface stays white in the light theme too. */
+:root[data-theme='light'] .btn.primary,
+:root[data-theme='light'] .btn:hover:not(:disabled),
+:root[data-theme='light'] .seg button.on,
+:root[data-theme='light'] .track-actions button:hover,
+:root[data-theme='light'] .ib.play:hover {
+  color: #fff;
+}
