@@ -49,12 +49,15 @@ interface SsSong {
   duration?: number;
   coverArt?: string;
   suffix?: string;
+  /** ISO date when starred; absent when not. */
+  starred?: string;
 }
 interface SsPlaylist {
   id: string;
   name: string;
   songCount?: number;
   coverArt?: string;
+  created?: string;
   entry?: SsSong[];
 }
 interface SsEnvelope {
@@ -68,6 +71,8 @@ interface SsEnvelope {
 /** Subsonic API client. Navidrome speaks this protocol (also works with other Subsonic servers). */
 export class SubsonicSource implements MusicSource {
   readonly kind = 'navidrome' as const;
+  /** search3 has no sort option, so the UI sorts whatever it has loaded. */
+  readonly sortsTracksOnServer = false;
   config: SourceConfig;
 
   constructor(
@@ -157,7 +162,33 @@ export class SubsonicSource implements MusicSource {
       durationSec: s.duration ?? 0,
       imageId: s.coverArt ?? s.albumId,
       container: s.suffix?.toLowerCase(),
+      liked: !!s.starred,
     };
+  }
+
+  async setFavorite(trackId: string, on: boolean): Promise<void> {
+    await this.call(on ? 'star' : 'unstar', { id: trackId });
+  }
+
+  async getLikedTracks(limit: number): Promise<Track[]> {
+    const r = await this.call<{ starred2?: { song?: SsSong[] } }>('getStarred2');
+    return arr(r.starred2?.song)
+      .slice(0, limit)
+      .map((s) => this.track({ ...s, starred: s.starred ?? 'yes' }));
+  }
+
+  async createPlaylist(name: string, trackIds: string[]): Promise<Playlist> {
+    const r = await this.call<{ playlist?: SsPlaylist }>('createPlaylist', { name, songId: trackIds });
+    if (r.playlist) return this.playlist(r.playlist);
+    // Older servers answer with a bare "ok" and no playlist: find it by name.
+    const found = (await this.getPlaylists()).find((p) => p.name === name);
+    if (!found) throw new SourceError('The server did not say which playlist it created', 'protocol');
+    return found;
+  }
+
+  async addToPlaylist(playlistId: string, trackIds: string[]): Promise<void> {
+    if (trackIds.length === 0) return;
+    await this.call('updatePlaylist', { playlistId, songIdToAdd: trackIds });
   }
 
   // ---- library ----------------------------------------------------------
@@ -195,7 +226,7 @@ export class SubsonicSource implements MusicSource {
   }
 
   private playlist(p: SsPlaylist): Playlist {
-    return { src: this.config.id, id: p.id, name: p.name, trackCount: p.songCount, imageId: p.coverArt ?? p.id };
+    return { src: this.config.id, id: p.id, name: p.name, trackCount: p.songCount, imageId: p.coverArt ?? p.id, addedAt: p.created };
   }
 
   async getPlaylists(): Promise<Playlist[]> {

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
-import { buildMixView, formatTime, type MixNode } from '../core';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { formatTime, isPinned, MAX_COVERS, type Layout, type PinRef, type Theme, type Track } from '../core';
 import { AlbumTile, ArtistTile } from './views-library';
 import {
   ACCENTS,
@@ -9,40 +9,165 @@ import {
   addDemoSource,
   addSource,
   artUrl,
+  cached,
   getSource,
   go,
   jumpTo,
   notify,
+  npFull,
+  openMixview,
   player,
-  playAlbum,
-  playArtist,
   reconnectSource,
   removeFromQueue,
   removeSource,
   requireSource,
   route,
+  saveQueueAsPlaylist,
   setAccent,
   setActiveSource,
+  setLayout,
+  setTheme,
   settings,
+  togglePinned,
+  togglePlay,
+  update,
   type NewSourceInput,
 } from './state';
-import { Art, Await, Icon, Section, Tile, TrackList, useAsync } from './ui';
+import { Art, Await, Eq, Icon, LikeButton, Section, TrackList, useAsync } from './ui';
 
 /* ---------------------------------------------------------------- now playing */
 
+const nowAlbumPin = (t: Track): PinRef => ({ kind: 'album', src: t.src, id: t.albumId ?? '', title: t.album, subtitle: t.artist, imageId: t.imageId });
+
+/** Cover art for the backdrop mosaic: what's queued, topped up with the newest albums. Stable per set of covers. */
+/** How many wall cells it takes to cover the window (any shape, with room for the drift), rounded up so small resizes don't churn. */
+function useWallCells(): number {
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    let t = 0;
+    const on = (): void => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => setSize({ w: window.innerWidth, h: window.innerHeight }), 150);
+    };
+    window.addEventListener('resize', on);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener('resize', on);
+    };
+  }, []);
+  const cell = Math.max(64, size.w * 0.056); // same as --cell in the stylesheet
+  const units = (2 * size.w * size.h) / (cell * cell); // 1x1 cells to fill ~2x the window area
+  const AVG_AREA = 3; // mean cell area given the 1x / 3x / 4x mix
+  return Math.min(600, Math.ceil((units / AVG_AREA + 20) / 40) * 40);
+}
+
+function useMosaic(): { src: string; id?: string; label: string; span: number }[] {
+  const count = useWallCells();
+  const cfg = activeConfig.value;
+  const queue = player.queue.value;
+  const newest = useAsync(
+    () => (cfg ? cached(`new:${cfg.id}`, () => requireSource(cfg.id).getNewestAlbums(24)) : Promise.resolve([])),
+    [cfg?.id],
+  );
+  type Cover = { src: string; id?: string; label: string };
+  const seen = new Map<string, Cover>();
+  for (const q of queue.slice(0, 80)) seen.set(`${q.src}:${q.imageId ?? q.album}`, { src: q.src, id: q.imageId, label: q.album || q.title });
+  for (const a of newest.data ?? []) seen.set(`${a.src}:${a.imageId ?? a.title}`, { src: a.src, id: a.imageId, label: a.title });
+  // only real artwork: no generated letter tiles on the wall
+  const covers = [...seen.values()].filter((c) => c.id && isRealArt(artUrl(c.src, c.id, 200)));
+  const key = [...seen.keys()].join('|');
+  return useMemo(() => {
+    if (covers.length === 0) return [];
+    // A mosaic of mixed sizes: mostly small (1x) covers, with some 3x and a few 4x ones (~80 / 13 / 7 %). Fixed-seed random,
+    // so the wall doesn't reshuffle on every render. CSS grid-auto-flow: dense fills the gaps.
+    let n = 7;
+    const rnd = (): number => (n = (n * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const order = covers.slice();
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [order[i], order[j]] = [order[j] as Cover, order[i] as Cover];
+    }
+    return Array.from({ length: count }, (_, i) => {
+      const r = rnd();
+      return { ...(order[i % order.length] as Cover), span: r < 0.07 ? 4 : r < 0.2 ? 3 : 1 };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, count]);
+}
+
+/** True for artwork served by a real server; the demo library's generated letter tiles (data: URLs) don't count. */
+const isRealArt = (url: string | undefined): url is string => !!url && /^https?:/i.test(url);
+
+/** One cover on the wall. If its image fails to load it simply drops out (the grid packs around it). */
+function WallCover({ c }: { c: { src: string; id?: string; span: number } }): JSX.Element | null {
+  const [failed, setFailed] = useState(false);
+  const url = artUrl(c.src, c.id, c.span > 1 ? 400 : 200);
+  if (!isRealArt(url) || failed) return null;
+  return <img class={`art m${c.span}`} src={url} alt="" loading="lazy" draggable={false} onError={() => setFailed(true)} />;
+}
+
+/** Name it, save "what's coming up" as a playlist. */
+function SaveQueue({ onDone }: { onDone(): void }): JSX.Element {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      class="np-save"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (busy || !name.trim()) return;
+        setBusy(true);
+        const made = await saveQueueAsPlaylist(name);
+        setBusy(false);
+        if (made) onDone();
+      }}
+    >
+      <input value={name} placeholder="playlist name" aria-label="Playlist name" autoFocus onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+      <button class="btn primary" type="submit" disabled={busy || !name.trim()}>
+        save
+      </button>
+      <button class="btn" type="button" onClick={onDone}>
+        cancel
+      </button>
+    </form>
+  );
+}
+
 export function NowPlaying(): JSX.Element {
+  const [saving, setSaving] = useState(false);
   const t = player.track.value;
   const idx = player.index.value;
   const queue = player.queue.value;
+  const full = npFull.value;
+  const mosaic = useMosaic();
+  const curRow = useRef<HTMLLIElement>(null);
+  const queueBox = useRef<HTMLElement>(null);
 
-  const artist = useAsync(async () => {
-    if (!t?.artistId) return undefined;
-    try {
-      return (await requireSource(t.src).getArtist(t.artistId)).artist;
-    } catch {
-      return undefined;
-    }
-  }, [t?.src, t?.artistId]);
+  // Keep the playing row in view as the queue advances.
+  // (scroll the queue itself: scrollIntoView would also nudge the clipped page around it)
+  useEffect(() => {
+    const row = curRow.current;
+    const box = queueBox.current;
+    if (row && box) box.scrollTo({ top: row.offsetTop - (box.clientHeight - row.clientHeight) / 2, behavior: 'smooth' });
+  }, [idx, t?.id]);
+
+  // Leaving the page, or the browser leaving fullscreen by itself (Esc), ends art-only mode.
+  useEffect(() => {
+    const onFs = (): void => {
+      if (!document.fullscreenElement) npFull.value = false;
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs);
+      npFull.value = false;
+      if (document.fullscreenElement) void document.exitFullscreen();
+    };
+  }, []);
+
+  const enterFull = (): void => {
+    npFull.value = true;
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  };
 
   if (!t) {
     return (
@@ -58,21 +183,22 @@ export function NowPlaying(): JSX.Element {
     );
   }
 
-  const a = artist.data;
-  // Prefer a wide artist backdrop, then the artist portrait, then the (blurred) album art.
-  const bg =
-    artUrl(t.src, a?.backdropId, 1080, 'backdrop') ?? artUrl(t.src, a?.imageId, 1080) ?? artUrl(t.src, t.imageId, 1080);
-  const info = [t.artist, t.album, t.trackNo ? `track ${t.trackNo}` : undefined].filter(Boolean).join('   •   ');
-  const upcoming = queue.slice(idx + 1);
-
   return (
-    <div class="np">
-      {bg && <img class="np-bg" src={bg} alt="" draggable={false} key={bg} />}
+    <div class={`np ${full ? 'full' : ''}`}>
+      <div class="np-wall" aria-hidden="true">
+        <div class="np-mosaic">
+          {mosaic.map((c, i) => (
+            <WallCover key={i} c={c} />
+          ))}
+        </div>
+      </div>
+      {/* the colour of the wall drifts around the colour wheel, starting from the accent */}
+      <div class={`np-tint ${mosaic.length ? '' : 'solo'}`} aria-hidden="true" />
       <div class="np-shade" />
+      {full && <div class="np-esc">press esc to exit</div>}
       <div class="np-body">
-        <Art src={t.src} id={t.imageId} label={t.title} size={700} class="np-art" />
+        <Art src={t.src} id={t.imageId} label={t.title} size={700} class="np-art" key={t.imageId ?? t.id} />
         <div class="np-info">
-          <h1 class="np-title">{t.title}</h1>
           <a class="np-artist" href={t.artistId ? `#/artist/${encodeURIComponent(t.src)}/${encodeURIComponent(t.artistId)}` : undefined}>
             {t.artist}
           </a>
@@ -81,96 +207,58 @@ export function NowPlaying(): JSX.Element {
               {t.album}
             </a>
           )}
-          <div class="marquee" aria-hidden="true">
-            <span>
-              {info}   •   {info}   •   {info}   •
-            </span>
-          </div>
+          <h1 class="np-title">{t.title}</h1>
           <div class="np-actions">
-            <button class="btn" onClick={() => t.artistId && go({ name: 'mixview', src: t.src, kind: 'artist', id: t.artistId })} disabled={!t.artistId}>
-              <Icon name="mix" size={18} /> mixview
+            <LikeButton track={t} size={22} class="ib" />
+            {t.albumId && (
+              <button
+                class={`ib ${isPinned(settings.value.quickplay, nowAlbumPin(t)) ? 'on' : ''}`}
+                title={isPinned(settings.value.quickplay, nowAlbumPin(t)) ? 'Unpin album from Quickplay' : 'Pin album to Quickplay'}
+                onClick={() => togglePinned(nowAlbumPin(t))}
+              >
+                <Icon name="pin" size={20} />
+              </button>
+            )}
+            {t.artistId && (
+              <button class="ib" title="Mixview: related artists and albums" onClick={() => openMixview(t.src, t.artistId as string)}>
+                <Icon name="mix" size={20} />
+              </button>
+            )}
+            <button class={`ib ${saving ? 'on' : ''}`} title="Save the queue as a playlist" onClick={() => setSaving(!saving)}>
+              <Icon name="playlist-add" size={20} />
+            </button>
+            <button class="ib" title="Full screen art" onClick={enterFull}>
+              <Icon name="expand" size={20} />
             </button>
           </div>
+          {saving && <SaveQueue onDone={() => setSaving(false)} />}
         </div>
-        <aside class="np-queue">
-          <h3>playing next</h3>
-          {upcoming.length === 0 ? (
+        <aside class="np-queue" ref={queueBox}>
+          {queue.length === 0 ? (
             <div class="status">end of queue</div>
           ) : (
             <ol>
-              {upcoming.slice(0, 40).map((q, i) => (
-                <li key={`${q.id}-${idx + 1 + i}`}>
-                  <button class="q-main" onClick={() => jumpTo(idx + 1 + i)}>
-                    <span class="q-title">{q.title}</span>
+              {queue.map((q, i) => (
+                <li key={`${q.id}-${i}`} class={i === idx ? 'cur' : i < idx ? 'past' : ''} ref={i === idx ? curRow : undefined}>
+                  <button class="q-main" onClick={() => (i === idx ? togglePlay() : jumpTo(i))}>
+                    <span class="q-title">
+                      {i === idx && <Eq playing={player.playing.value} />}
+                      {q.title}
+                    </span>
                     <span class="q-sub">{q.artist}</span>
                   </button>
                   <span class="q-time">{formatTime(q.durationSec)}</span>
-                  <button class="q-x" title="Remove" onClick={() => removeFromQueue(idx + 1 + i)}>
-                    <Icon name="close" size={14} />
-                  </button>
+                  {i !== idx && (
+                    <button class="q-x" title="Remove" onClick={() => removeFromQueue(i)}>
+                      <Icon name="close" size={14} />
+                    </button>
+                  )}
                 </li>
               ))}
             </ol>
           )}
         </aside>
       </div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- mixview */
-
-export function MixView({ src, kind, id }: { src: string; kind: 'artist' | 'album'; id: string }): JSX.Element {
-  const st = useAsync(() => buildMixView(requireSource(src), { kind, id }, 8), [src, kind, id]);
-  return (
-    <Await state={st}>
-      {({ center, related }) => (
-        <div class="mix" key={`${kind}${id}`}>
-          <div class="mix-stage">
-            {related.map((n, i) => {
-              const ang = (i / related.length) * Math.PI * 2 - Math.PI / 2;
-              return (
-                <Tile
-                  key={`${n.kind}${n.id}`}
-                  class="mix-sat"
-                  title={n.title}
-                  subtitle={n.subtitle}
-                  src={n.src}
-                  imageId={n.imageId}
-                  i={i}
-                  vars={{ '--cx': Math.cos(ang).toFixed(4), '--cy': Math.sin(ang).toFixed(4) }}
-                  onClick={() => go({ name: 'mixview', src: n.src, kind: n.kind, id: n.id })}
-                  onPlay={() => void (n.kind === 'artist' ? playArtist(n.src, n.id) : playAlbum(n.src, n.id))}
-                />
-              );
-            })}
-            <MixCenter node={center} />
-          </div>
-          <p class="mix-hint">select any tile to re-centre mixview on it</p>
-        </div>
-      )}
-    </Await>
-  );
-}
-
-function MixCenter({ node }: { node: MixNode }): JSX.Element {
-  return (
-    <div class="mix-center">
-      <div class="tile mix-main">
-        <Art src={node.src} id={node.imageId} label={node.title} size={500} />
-        <button
-          class="tile-play always"
-          title="Play"
-          onClick={() => void (node.kind === 'artist' ? playArtist(node.src, node.id) : playAlbum(node.src, node.id))}
-        >
-          <Icon name="play" size={30} />
-        </button>
-      </div>
-      <h1>{node.title}</h1>
-      <div class="meta">{node.subtitle}</div>
-      <button class="btn" onClick={() => go({ name: node.kind, src: node.src, id: node.id })}>
-        open {node.kind}
-      </button>
     </div>
   );
 }
@@ -397,6 +485,30 @@ export function SourcesView(): JSX.Element {
         </form>
       </Section>
 
+      <Section title="appearance">
+        <div class="setting">
+          <div class="setting-name">theme</div>
+          <div class="seg">
+            {(['dark', 'light', 'system'] as Theme[]).map((t) => (
+              <button type="button" key={t} class={s.theme === t ? 'on' : ''} onClick={() => setTheme(t)}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div class="setting">
+          <div class="setting-name">collection layout</div>
+          <div class="seg">
+            {(['custom', 'classic'] as Layout[]).map((l) => (
+              <button type="button" key={l} class={s.layout === l ? 'on' : ''} onClick={() => setLayout(l)}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <p class="fine">custom: tiles for artists, albums and songs. classic: artists, albums and songs side by side, like the original Zune software.</p>
+        </div>
+      </Section>
+
       <Section title="colour">
         <div class="swatches">
           {ACCENTS.map((a) => (
@@ -410,6 +522,34 @@ export function SourcesView(): JSX.Element {
           ))}
         </div>
       </Section>
+
+      <Section title="privacy">
+        <p class="fine wide">
+          This app talks only to the servers you add here. No accounts, no analytics, no telemetry, and nothing is sent to anyone else. Your
+          password is used once to sign in and is never stored; only an access token is kept on this computer. Recommendations such as related
+          artists come from your own server (if it has Last.fm or similar set up, that is the server&apos;s business, not this app&apos;s).
+        </p>
+        <p class="fine wide">
+          Covers you change here stay on this computer ({Object.keys(s.covers).length} of {MAX_COVERS} used); the server is not touched. Smart DJ
+          remembers which artists you skip, in this computer&apos;s settings file only.
+        </p>
+        {Object.keys(s.taste.skips).length > 0 && (
+          <button
+            class="btn"
+            onClick={() => {
+              update((x) => (x.taste.skips = {}));
+              notify('Smart DJ forgot what you skipped');
+            }}
+          >
+            forget what I skipped
+          </button>
+        )}
+      </Section>
+
+      <p class="legal">
+        Bring Back Zune is an independent, unofficial project and is not affiliated with or endorsed by Microsoft. Zune is a trademark of Microsoft
+        Corporation.
+      </p>
     </div>
   );
 }

@@ -3,9 +3,11 @@ import { useEffect, useState } from 'preact/hooks';
 import { formatTime } from '../core';
 import {
   activeConfig,
+  collectionRoute,
   cycleRepeat,
   go,
   nextTrack,
+  npFull,
   player,
   prevTrack,
   ready,
@@ -19,17 +21,26 @@ import {
   toggleShuffle,
   togglePlay,
   type Route,
+  lastCollectionTab,
 } from './state';
-import { Art, Icon } from './ui';
+import { getBridge } from './bridge';
+import { Art, Icon, LikeButton } from './ui';
 import { AlbumPage, ArtistPage, Collection, PlaylistPage, Quickplay } from './views-library';
-import { MixView, NowPlaying, SearchView, SourcesView } from './views-play';
+import { Visualizer } from './visualizer';
+import { MixviewPage } from './views-mixview';
+import { NowPlaying, SearchView, SourcesView } from './views-play';
 
+<<<<<<< HEAD
 const PIVOT: { label: string; match: Route['name'][]; to: Route }[] = [
   { label: 'quickplay', match: ['quickplay'], to: { name: 'quickplay' } },
   { label: 'collection', match: ['collection', 'artist', 'album', 'playlist', 'mixview'], to: { name: 'collection', tab: 'artists' } },
   { label: 'now playing', match: ['nowplaying'], to: { name: 'nowplaying' } },
-  { label: 'search', match: ['search'], to: { name: 'search', q: '' } },
-  { label: 'sources', match: ['sources'], to: { name: 'sources' } },
+=======
+const PIVOT: { label: string; match: Route['name'][]; to: () => Route }[] = [
+  { label: 'quickplay', match: ['quickplay'], to: () => ({ name: 'quickplay' }) },
+  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist'], to: () => collectionRoute.value },
+  { label: 'now playing', match: ['nowplaying'], to: () => ({ name: 'nowplaying' }) },
+>>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
 ];
 
 function View({ r }: { r: Route }): JSX.Element {
@@ -40,14 +51,14 @@ function View({ r }: { r: Route }): JSX.Element {
       return <Collection tab={r.tab} />;
     case 'artist':
       return <ArtistPage src={r.src} id={r.id} />;
+    case 'mixview':
+      return <MixviewPage src={r.src} id={r.id} />;
     case 'album':
       return <AlbumPage src={r.src} id={r.id} />;
     case 'playlist':
       return <PlaylistPage src={r.src} id={r.id} />;
     case 'nowplaying':
       return <NowPlaying />;
-    case 'mixview':
-      return <MixView src={r.src} kind={r.kind} id={r.id} />;
     case 'search':
       return <SearchView q={r.q} />;
     case 'sources':
@@ -66,29 +77,44 @@ export function App(): JSX.Element {
   const active = activeConfig.value;
 
   return (
-    <div class={`shell route-${r.name}`}>
+    <div class={`shell route-${r.name} ${r.name === 'nowplaying' && npFull.value ? 'np-full' : ''}`}>
       <header class="head">
-        {detail && (
-          <button class="back" title="Back" onClick={() => history.back()}>
-            <Icon name="back" size={26} />
-          </button>
-        )}
+        <span class="accent-bar" />
+        <button class={`back ${detail || r.name === 'search' || r.name === 'sources' || r.name === 'nowplaying' ? '' : 'off'}`} title="Back" onClick={() => history.back()}>
+          <Icon name="back" size={14} />
+        </button>
         <nav class="pivot">
           {PIVOT.map((p) => (
-            <a key={p.label} href={`#${hashOf(p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
+<<<<<<< HEAD
+            <a key={p.label} href={`#${hashOf(p.to.name === 'collection' ? { name: 'collection', tab: lastCollectionTab.value } : p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
+=======
+            <a key={p.label} href={`#${hashOf(p.to())}`} class={p.match.includes(r.name) ? 'active' : ''}>
+>>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
               {p.label}
             </a>
           ))}
         </nav>
-        {sources.length > 1 && (
-          <select class="src-select" value={active?.id} onChange={(e) => setActiveSource((e.target as HTMLSelectElement).value)} title="Active server">
-            {sources.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <WindowControls />
+        <div class="head-right">
+          <div class="head-top">
+            <div class="head-links">
+              <a href="#/sources">SETTINGS</a>
+            </div>
+            <div class="brand" title="Bring Back Zune">
+              <Icon name="zmark" size={24} />
+            </div>
+          </div>
+          <HeaderSearch q={r.name === 'search' ? r.q : ''} />
+          {sources.length > 1 && (
+            <select class="src-select" value={active?.id} onChange={(e) => setActiveSource((e.target as HTMLSelectElement).value)} title="Active server">
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </header>
       <main class="main" key={routeKey(r)}>
         <View r={r} />
@@ -96,6 +122,23 @@ export function App(): JSX.Element {
       <PlayerBar />
       {toast.value && <div class={`toast ${toast.value.kind}`}>{toast.value.msg}</div>}
     </div>
+  );
+}
+
+function HeaderSearch({ q }: { q: string }): JSX.Element {
+  const [text, setText] = useState(q);
+  useEffect(() => setText(q), [q]);
+  return (
+    <form
+      class="head-search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        location.hash = `#/search/${encodeURIComponent(text)}`;
+      }}
+    >
+      <input type="search" placeholder="search" aria-label="Search" value={text} onInput={(e) => setText((e.target as HTMLInputElement).value)} />
+      <Icon name="search" size={14} />
+    </form>
   );
 }
 
@@ -114,7 +157,48 @@ const hashOf = (r: Route): string => {
 const routeKey = (r: Route): string =>
   r.name === 'collection' ? `collection-${r.tab}` : r.name === 'search' ? 'search' : JSON.stringify(r);
 
-function Progress(): JSX.Element {
+/** Our own minimize / maximize / close, since the OS window frame is gone. */
+function WindowControls({ mini = false }: { mini?: boolean }): JSX.Element {
+  const win = getBridge();
+  const [maxed, setMaxed] = useState(false);
+  useEffect(() => {
+    void win.isMaximized().then(setMaxed);
+    win.onMaximized(setMaxed);
+  }, []);
+  return (
+    <div class="winctl">
+      <button title="Minimize" aria-label="Minimize" onClick={() => void win.minimize()}>
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2 9h8" stroke="currentColor" stroke-width="1.4" fill="none" />
+        </svg>
+      </button>
+      {mini ? (
+        <button title="Back to full window" aria-label="Back to full window" onClick={() => void setMini(false)}>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.5 2.5h7v7h-7zM2.5 5h7" stroke="currentColor" stroke-width="1.2" fill="none" />
+          </svg>
+        </button>
+      ) : (
+        <button title={maxed ? 'Restore' : 'Maximize'} aria-label={maxed ? 'Restore' : 'Maximize'} onClick={() => void win.toggleMaximize().then(setMaxed)}>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            {maxed ? (
+              <path d="M4 2.5h5.5V8M2.5 4H8v5.5H2.5z" stroke="currentColor" stroke-width="1.2" fill="none" />
+            ) : (
+              <path d="M2.5 2.5h7v7h-7z" stroke="currentColor" stroke-width="1.3" fill="none" />
+            )}
+          </svg>
+        </button>
+      )}
+      <button class="close" title="Close" aria-label="Close" onClick={() => void win.close()}>
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.4" fill="none" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function Progress({ remaining = false }: { remaining?: boolean }): JSX.Element {
   const pos = player.position.value;
   const dur = player.duration.value;
   const [scrub, setScrub] = useState<number | null>(null);
@@ -137,7 +221,7 @@ function Progress(): JSX.Element {
           setScrub(null);
         }}
       />
-      <span class="time">{formatTime(dur)}</span>
+      <span class="time">{remaining ? `-${formatTime(Math.max(0, dur - shown))}` : formatTime(dur)}</span>
     </div>
   );
 }
@@ -164,24 +248,29 @@ function PlayerBar(): JSX.Element {
   const repeat = player.repeat.value;
   return (
     <footer class="bar">
-      <div class="bar-now" onClick={() => t && go({ name: 'nowplaying' })} role={t ? 'button' : undefined}>
+      <Visualizer />
+      <div class="bar-now">
         {t ? (
           <>
-            <Art src={t.src} id={t.imageId} label={t.title} size={120} class="bar-art" />
-            <div class="bar-text">
-              <div class="bar-title">{t.title}</div>
-              <div class="bar-sub">{t.artist}</div>
+            <Art src={t.src} id={t.imageId} label={t.title} size={120} class="bar-art" onClick={() => go({ name: 'nowplaying' })} />
+            <div class="bar-main">
+              <div class="bar-line">
+                <div class="bar-text" role="button" onClick={() => go({ name: 'nowplaying' })}>
+                  <span class="bar-title">{t.title}</span>
+                  <span class="bar-sub">{t.artist}</span>
+                </div>
+                <LikeButton track={t} size={16} class="ib" />
+              </div>
+              <Progress remaining />
             </div>
           </>
         ) : (
           <div class="bar-sub">nothing playing</div>
         )}
       </div>
-      <div class="bar-mid">
-        <Transport />
-        <Progress />
-      </div>
-      <div class="bar-right">
+      <div class="bar-ctl">
+        <Transport size={0.8} />
+        <div class="bar-right">
         <button class={`ib ${player.shuffle.value ? 'on' : ''}`} title="Shuffle" onClick={toggleShuffle}>
           <Icon name="shuffle" size={20} />
         </button>
@@ -206,26 +295,36 @@ function PlayerBar(): JSX.Element {
           <Icon name="mini" size={20} />
         </button>
       </div>
+      </div>
     </footer>
   );
 }
 
+/** The small portrait player: artist + album in caps, big art, progress, track, what's next, round transport. */
 function Mini(): JSX.Element {
   const t = player.track.value;
+  const queue = player.queue.value;
+  const next = queue.slice(player.index.value + 1, player.index.value + 4);
   return (
     <div class="mini">
-      <div class="mini-top">
-        {t ? <Art src={t.src} id={t.imageId} label={t.title} size={200} class="mini-art" /> : <div class="art art-ph mini-art" />}
-        <div class="mini-text">
-          <div class="bar-title">{t?.title ?? 'nothing playing'}</div>
-          <div class="bar-sub">{t?.artist ?? ''}</div>
-          <Transport size={0.85} />
-        </div>
-        <button class="ib mini-x" title="Back to full window" onClick={() => void setMini(false)}>
-          <Icon name="mini" size={18} />
-        </button>
+      <span class="accent-bar" />
+      <WindowControls mini />
+      <div class="mini-head">
+        <div class="mini-artist">{t?.artist ?? 'nothing playing'}</div>
+        <div class="mini-album">{t?.album ?? ''}</div>
       </div>
-      <Progress />
+      {t ? <Art src={t.src} id={t.imageId} label={t.title} size={400} class="mini-art" /> : <div class="art art-ph mini-art" />}
+      <Progress remaining />
+      <div class="mini-track">{t?.title ?? ''}</div>
+      <ol class="mini-next">
+        {next.map((n, i) => (
+          <li key={`${n.id}-${i}`}>{n.title}</li>
+        ))}
+      </ol>
+      <div class="mini-ctrl">
+        <Transport size={0.9} />
+        {t && <LikeButton track={t} size={20} class="ib" />}
+      </div>
     </div>
   );
 }
@@ -240,7 +339,10 @@ function useGlobalKeys(): void {
         togglePlay();
       } else if (e.ctrlKey && e.key === 'ArrowRight') nextTrack();
       else if (e.ctrlKey && e.key === 'ArrowLeft') prevTrack();
-      else if (e.key === 'Escape' && player.mini.value) void setMini(false);
+      else if (e.key === 'Escape' && npFull.value) {
+        npFull.value = false;
+        if (document.fullscreenElement) void document.exitFullscreen();
+      } else if (e.key === 'Escape' && player.mini.value) void setMini(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -1,7 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { formatTime, type Track } from '../core';
-import { artUrl, enqueue, jumpTo, player, playTracks } from './state';
+import { formatTime, isPinned, trackToPin, type PinRef, type Track, type TrackSortKey } from '../core';
+import { addToPlaylist, artUrl, cached, createPlaylistFrom, enqueue, isLiked, jumpTo, player, playTracks, requireSource, settings, toggleLike, togglePinned } from './state';
 
 /* ---------------------------------------------------------------- icons */
 
@@ -19,9 +19,43 @@ const PATHS: Record<string, string> = {
   plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
   close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
   back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
+  heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+  'heart-o': 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+  search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  zmark: 'M6 5h12v2.6L9.9 16H18v3H6v-2.6L14.1 8H6z',
+  expand: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
   dj: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
-  mix: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM4 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm16 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  'playlist-add': 'M14 10H2v2h12v-2zm0-4H2v2h12V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM2 16h8v-2H2v2z',
+  mix: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
 };
+
+export function LikeButton({ track, size = 18, class: cls = '' }: { track: Track; size?: number; class?: string }): JSX.Element {
+  const on = isLiked(track);
+  return (
+    <button
+      class={`like ${on ? 'on' : ''} ${cls}`}
+      title={on ? 'Remove like' : 'Like'}
+      aria-pressed={on}
+      onClick={(e) => {
+        e.stopPropagation();
+        void toggleLike(track);
+      }}
+    >
+      <Icon name={on ? 'heart' : 'heart-o'} size={size} />
+    </button>
+  );
+}
+
+/** The little animated equaliser that marks the playing track. */
+export function Eq({ playing = true }: { playing?: boolean }): JSX.Element {
+  return (
+    <span class={`eq ${playing ? '' : 'paused'}`} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
 
 export function Icon({ name, size = 22 }: { name: keyof typeof PATHS | string; size?: number }): JSX.Element {
   return (
@@ -73,18 +107,19 @@ export function Art(props: {
   kind?: 'primary' | 'backdrop';
   label: string;
   class?: string;
+  onClick?: () => void;
 }): JSX.Element {
   const url = artUrl(props.src, props.id, props.size ?? 300, props.kind ?? 'primary');
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
   if (!url || failed) {
     return (
-      <div class={`art art-ph ${props.class ?? ''}`} style={{ '--h': hueOf(props.label) } as JSX.CSSProperties}>
+      <div class={`art art-ph ${props.class ?? ''}`} style={{ '--h': hueOf(props.label) } as JSX.CSSProperties} onClick={props.onClick}>
         <span>{props.label.trim().charAt(0).toUpperCase()}</span>
       </div>
     );
   }
-  return <img class={`art ${props.class ?? ''}`} src={url} alt="" loading="lazy" draggable={false} onError={() => setFailed(true)} />;
+  return <img class={`art ${props.class ?? ''}`} src={url} alt="" loading="lazy" draggable={false} onError={() => setFailed(true)} onClick={props.onClick} />;
 }
 
 export function Tile(props: {
@@ -94,16 +129,22 @@ export function Tile(props: {
   imageId?: string;
   onClick?: () => void;
   onPlay?: () => void;
+  /** When set, the tile can be pinned to Quickplay (hover button or right-click). */
+  pin?: PinRef;
   i?: number;
   class?: string;
-  /** Extra CSS custom properties (used by MixView for positioning). */
-  vars?: Record<string, string | number>;
   children?: ComponentChildren;
 }): JSX.Element {
+  const pinned = props.pin ? isPinned(settings.value.quickplay, props.pin) : false;
   return (
     <div
       class={`tile ${props.class ?? ''}`}
-      style={{ '--i': props.i ?? 0, ...props.vars } as JSX.CSSProperties}
+      onContextMenu={(e) => {
+        if (!props.pin) return;
+        e.preventDefault();
+        togglePinned(props.pin);
+      }}
+      style={{ '--i': props.i ?? 0 } as JSX.CSSProperties}
       role="button"
       tabIndex={0}
       onClick={props.onClick}
@@ -124,6 +165,19 @@ export function Tile(props: {
           }}
         >
           <Icon name="play" size={26} />
+        </button>
+      )}
+      {props.pin && (
+        <button
+          class={`tile-pin ${pinned ? 'on' : ''}`}
+          title={pinned ? 'Unpin from Quickplay' : 'Pin to Quickplay'}
+          aria-pressed={pinned}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (props.pin) togglePinned(props.pin);
+          }}
+        >
+          <Icon name="pin" size={14} />
         </button>
       )}
       {props.children}
@@ -167,6 +221,152 @@ export function Await<T>(props: { state: Async<T>; children: (data: T) => Compon
   return <>{props.children(state.data)}</>;
 }
 
+/* ---------------------------------------------------------------- drag and drop + playlists */
+
+/** Songs being dragged right now (a drag can't carry objects between handlers, so it is kept here). */
+let dragged: Track[] = [];
+
+export function dragProps(tracks: Track[]): JSX.HTMLAttributes<HTMLDivElement> {
+  return {
+    draggable: true,
+    onDragStart: (e) => {
+      dragged = tracks;
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', tracks.map((t) => `${t.title} - ${t.artist}`).join('\n'));
+      }
+    },
+    onDragEnd: () => {
+      dragged = [];
+    },
+  } as JSX.HTMLAttributes<HTMLDivElement>;
+}
+
+/** Make an element accept dragged songs. `over` is true while one hovers above it. */
+export function useDropZone(onDrop: (tracks: Track[]) => void): { over: boolean; props: JSX.HTMLAttributes<HTMLDivElement> } {
+  const [over, setOver] = useState(false);
+  return {
+    over,
+    props: {
+      onDragOver: (e) => {
+        if (dragged.length === 0) return;
+        e.preventDefault();
+        setOver(true);
+      },
+      onDragLeave: () => setOver(false),
+      onDrop: (e) => {
+        e.preventDefault();
+        setOver(false);
+        const tracks = dragged;
+        dragged = [];
+        if (tracks.length > 0) onDrop(tracks);
+      },
+    } as JSX.HTMLAttributes<HTMLDivElement>,
+  };
+}
+
+/** A button that opens a small menu to put `tracks` into a playlist (existing, or a new one). */
+export function AddToPlaylist({ tracks, size = 16, class: cls = '', title = 'Add to playlist', onDone }: { tracks: Track[]; size?: number; class?: string; title?: string; onDone?: () => void }): JSX.Element {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!at) return;
+    const close = (): void => setAt(null);
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
+    const scroller = document.querySelector('.main');
+    window.addEventListener('click', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    scroller?.addEventListener('scroll', close, { once: true });
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+      scroller?.removeEventListener('scroll', close);
+    };
+  }, [at !== null]);
+  return (
+    <>
+      <button
+        class={cls}
+        title={title}
+        aria-haspopup="menu"
+        aria-expanded={at !== null}
+        onClick={(e) => {
+          e.stopPropagation();
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setAt(at ? null : { x: Math.max(8, Math.min(r.left, window.innerWidth - 268)), y: Math.max(8, Math.min(r.bottom + 4, window.innerHeight - 340)) });
+        }}
+      >
+        <Icon name="playlist-add" size={size} />
+      </button>
+      {at && (
+        <PlaylistMenu
+          tracks={tracks}
+          x={at.x}
+          y={at.y}
+          done={() => {
+            setAt(null);
+            onDone?.();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function PlaylistMenu({ tracks, x, y, done }: { tracks: Track[]; x: number; y: number; done: () => void }): JSX.Element {
+  const src = tracks[0]?.src ?? '';
+  const lists = useAsync(() => cached(`playlists:${src}`, () => requireSource(src).getPlaylists()), [src]);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const n = tracks.length;
+  return (
+    <div class="pl-menu" role="menu" style={{ left: `${x}px`, top: `${y}px` }} onClick={(e) => e.stopPropagation()}>
+      <div class="pl-menu-h">add {n === 1 ? 'song' : `${n} songs`} to</div>
+      <form
+        class="pl-new"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (busy || !name.trim()) return;
+          setBusy(true);
+          const made = await createPlaylistFrom(src, name, tracks);
+          setBusy(false);
+          if (made) done();
+        }}
+      >
+        <input value={name} placeholder="new playlist…" aria-label="New playlist name" onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+        <button class="btn primary" type="submit" disabled={busy || !name.trim()}>
+          create
+        </button>
+      </form>
+      <ul>
+        {lists.error && <li class="pl-note">{lists.error}</li>}
+        {!lists.error && lists.data === undefined && <li class="pl-note">loading…</li>}
+        {lists.data?.length === 0 && <li class="pl-note">no playlists yet</li>}
+        {lists.data?.map((p) => (
+          <li key={p.id}>
+            <button
+              role="menuitem"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                const ok = await addToPlaylist(p, tracks);
+                setBusy(false);
+                if (ok) done();
+              }}
+            >
+              {p.name}
+              {p.trackCount != null && <span>{p.trackCount}</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------- track list */
 
 export function TrackList(props: {
@@ -176,11 +376,39 @@ export function TrackList(props: {
   numbered?: boolean;
   /** Called to start playback from row i; defaults to queueing the whole list. */
   onPlay?: (i: number) => void;
+  /** Replaces the row's pin / play next / add buttons (the like button stays). */
+  actions?: (t: Track) => ComponentChildren;
+  /** When set, a header row is shown and its column titles sort the list. */
+  sort?: { by: TrackSortKey; desc?: boolean; onSort(key: TrackSortKey): void };
 }): JSX.Element {
   const cur = player.track.value;
   if (props.tracks.length === 0) return <div class="status">nothing here yet</div>;
+  const head = (key: TrackSortKey, label: string, right = false): JSX.Element => {
+    const on = props.sort?.by === key;
+    return (
+      <button
+        class={`head-cell ${on ? 'on' : ''} ${right ? 'right' : ''}`}
+        aria-sort={on ? (props.sort?.desc ? 'descending' : 'ascending') : 'none'}
+        title={`Sort by ${label}`}
+        onClick={() => props.sort?.onSort(key)}
+      >
+        {label}
+        {on && <span class="arrow">{props.sort?.desc ? '▼' : '▲'}</span>}
+      </button>
+    );
+  };
   return (
     <div class="tracks" role="list">
+      {props.sort && (
+        <div class="track track-head">
+          <div />
+          {head('title', 'title')}
+          {props.showArtist && head('artist', 'artist')}
+          {props.showAlbum && head('album', 'album')}
+          <div />
+          {head('time', 'time', true)}
+        </div>
+      )}
       {props.tracks.map((t, i) => {
         const playing = cur?.id === t.id && cur.src === t.src;
         return (
@@ -188,7 +416,12 @@ export function TrackList(props: {
             key={`${t.id}-${i}`}
             role="listitem"
             class={`track ${playing ? 'is-playing' : ''}`}
+            {...dragProps([t])}
             onDblClick={() => (props.onPlay ? props.onPlay(i) : playTracks(props.tracks, i))}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              togglePinned(trackToPin(t));
+            }}
           >
             <button class="track-num" title="Play" onClick={() => (props.onPlay ? props.onPlay(i) : playTracks(props.tracks, i))}>
               <span class="num">{playing && player.playing.value ? '♪' : props.numbered ? (t.trackNo ?? i + 1) : i + 1}</span>
@@ -198,12 +431,27 @@ export function TrackList(props: {
             {props.showArtist && <div class="track-artist">{t.artist}</div>}
             {props.showAlbum && <div class="track-album">{t.album}</div>}
             <div class="track-actions">
-              <button title="Play next" onClick={() => enqueue([t], true)}>
-                <Icon name="next" size={16} />
-              </button>
-              <button title="Add to now playing" onClick={() => enqueue([t])}>
-                <Icon name="plus" size={16} />
-              </button>
+              <LikeButton track={t} size={16} />
+              {props.actions ? (
+                props.actions(t)
+              ) : (
+                <>
+                  <button
+                    class={`pin ${isPinned(settings.value.quickplay, trackToPin(t)) ? 'on' : ''}`}
+                    title={isPinned(settings.value.quickplay, trackToPin(t)) ? 'Unpin from Quickplay' : 'Pin to Quickplay'}
+                    onClick={() => togglePinned(trackToPin(t))}
+                  >
+                    <Icon name="pin" size={16} />
+                  </button>
+                  <AddToPlaylist tracks={[t]} size={16} />
+                  <button title="Play next" onClick={() => enqueue([t], true)}>
+                    <Icon name="next" size={16} />
+                  </button>
+                  <button title="Add to now playing" onClick={() => enqueue([t])}>
+                    <Icon name="plus" size={16} />
+                  </button>
+                </>
+              )}
             </div>
             <div class="track-time">{formatTime(t.durationSec)}</div>
           </div>

@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bring Back Zune</title>
+    <meta name="description" content="A Zune-software-style desktop player for your own Jellyfin or Navidrome server. Windows and Linux." />
+    <style>
+      :root {
+        --accent: #d80073;
+        --bg: #000;
+        --fg: #fff;
+        --dim: rgba(255, 255, 255, 0.62);
+        --faint: rgba(255, 255, 255, 0.14);
+        --panel: #141414;
+        --font: 'Segoe UI', 'Segoe UI Variable', 'Selawik', 'Inter', 'Open Sans', system-ui, sans-serif;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f6f6;
+          --fg: #111;
+          --dim: rgba(0, 0, 0, 0.62);
+          --faint: rgba(0, 0, 0, 0.14);
+          --panel: #ebebeb;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font);
+        font-weight: 300;
+        font-size: 18px;
+        line-height: 1.55;
+      }
+      a {
+        color: inherit;
+      }
+      a:hover {
+        color: var(--accent);
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      header.top {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--faint);
+      }
+      header.top .wrap {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        height: 56px;
+      }
+      header.top .brand {
+        font-weight: 600;
+        text-decoration: none;
+        margin-right: auto;
+      }
+      header.top nav a {
+        text-decoration: none;
+        font-size: 15px;
+        color: var(--dim);
+        margin-left: 18px;
+      }
+      header.top nav a:hover {
+        color: var(--fg);
+      }
+      .btn {
+        display: inline-block;
+        background: var(--accent);
+        color: #fff;
+        padding: 11px 26px;
+        font-size: 17px;
+        text-decoration: none;
+        border: 2px solid var(--accent);
+      }
+      .btn:hover {
+        color: #fff;
+        filter: brightness(1.15);
+      }
+      .btn.ghost {
+        background: none;
+        color: var(--fg);
+        border-color: var(--faint);
+      }
+      .btn.ghost:hover {
+        color: var(--fg);
+        border-color: var(--accent);
+      }
+      .hero {
+        padding: 72px 0 40px;
+      }
+      .hero h1 {
+        font-size: clamp(44px, 9vw, 104px);
+        font-weight: 300;
+        line-height: 1;
+        letter-spacing: -2px;
+        margin: 0 0 16px;
+      }
+      .hero h1 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+      .hero p {
+        max-width: 640px;
+        color: var(--dim);
+        font-size: 21px;
+        margin: 0 0 28px;
+      }
+      .hero .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .shot {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--faint);
+        background: #000;
+      }
+      h2 {
+        font-size: 34px;
+        font-weight: 300;
+        color: var(--accent);
+        margin: 0 0 18px;
+        letter-spacing: -0.4px;
+      }
+      section {
+        padding: 56px 0;
+        scroll-margin-top: 56px;
+      }
+      /* tour */
+      .tour-stage {
+        position: relative;
+      }
+      .slide {
+        display: none;
+      }
+      .slide.on {
+        display: block;
+      }
+      .tour-cap {
+        display: flex;
+        gap: 20px;
+        align-items: baseline;
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+      .tour-cap h3 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 400;
+      }
+      .tour-cap p {
+        margin: 0;
+        color: var(--dim);
+        flex: 1 1 320px;
+      }
+      .tour-ctl {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .tour-ctl button {
+        background: none;
+        color: var(--fg);
+        border: 2px solid var(--faint);
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+        cursor: pointer;
+      }
+      .tour-ctl button:hover {
+        border-color: var(--accent);
+      }
+      /* little things */
+      .little {
+        columns: 2 340px;
+        column-gap: 40px;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .little li {
+        break-inside: avoid;
+        padding: 10px 0 12px;
+        border-top: 1px solid var(--faint);
+      }
+      .little b {
+        font-weight: 600;
+        display: block;
+      }
+      .little span {
+        color: var(--dim);
+      }
+      /* privacy + faq */
+      .privacy {
+        background: var(--panel);
+      }
+      .privacy ul {
+        margin: 0;
+        padding-left: 20px;
+        max-width: 760px;
+      }
+      .privacy li {
+        margin: 8px 0;
+      }
+      details {
+        border-top: 1px solid var(--faint);
+        padding: 14px 0;
+      }
+      details:last-of-type {
+        border-bottom: 1px solid var(--faint);
+      }
+      summary {
+        cursor: pointer;
+        font-size: 20px;
+        font-weight: 400;
+      }
+      details p {
+        color: var(--dim);
+        margin: 10px 0 0;
+        max-width: 760px;
+      }
+      code {
+        font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+        font-size: 0.9em;
+        background: var(--panel);
+        padding: 1px 6px;
+      }
+      footer {
+        border-top: 1px solid var(--faint);
+        padding: 30px 0 50px;
+        color: var(--dim);
+        font-size: 14px;
+      }
+      footer p {
+        margin: 6px 0;
+        max-width: 760px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="#top">bring back zune</a>
+        <nav>
+          <a href="#tour">tour</a>
+          <a href="#little">the little things</a>
+          <a href="#privacy">privacy</a>
+          <a href="#questions">questions</a>
+          <a href="https://github.com/jgarza9788/BringBackZune">github</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <div class="wrap hero">
+        <h1>bring back <em>zune</em></h1>
+        <p>
+          a music player for your own Jellyfin or Navidrome server, drawn the way the Zune software used to look. black canvas, big light
+          type, one colour that is yours. Windows and Linux.
+        </p>
+        <div class="row">
+          <a class="btn" href="https://github.com/jgarza9788/BringBackZune/releases">download</a>
+          <a class="btn ghost" href="#tour">take the tour</a>
+        </div>
+      </div>
+      <div class="wrap">
+        <img class="shot" src="img/nowplaying.png" alt="Now Playing: the cover, the queue and a glow along the bottom edge" width="1280" height="800" />
+      </div>
+
+      <section id="tour">
+        <div class="wrap">
+          <h2>tour</h2>
+          <div class="tour-stage" id="tour-stage">
+            <div class="slide on">
+              <img class="shot" src="img/quickplay.png" alt="Quickplay" width="1280" height="800" loading="lazy" />
+              <div class="tour-cap">
+                <h3>quickplay</h3>
+                <p>what is playing, six pins, five Smart DJ slots, what you played last and what is new. the first thing you see.</p>
+              </div>
+            </div>
+            <div class="slide">
+              <img class="shot" src="img/nowplaying.png" alt="Now Playing" width="1280" height="800" loading="lazy" />
+              <div class="tour-cap">
+                <h3>now playing</h3>
+                <p>a wall of your covers in one colour, the queue on the right, a glow along the bottom that moves with the music. save the queue as a playlist from here.</p>
+              </div>
+            </div>
+            <div class="slide">
+              <img class="shot" src="img/mixview.png" alt="Mixview" width="1280" height="800" loading="lazy" />
+              <div class="tour-cap">
+                <h3>mixview</h3>
+                <p>an artist in the middle, related artists and albums piled around them like record sleeves. click one to move there, follow the trail back, or jump to whatever is playing.</p>
+              </div>
+            </div>
+            <div class="slide">
+              <img class="shot" src="img/album.png" alt="An album page" width="1280" height="800" loading="lazy" />
+              <div class="tour-cap">
+                <h3>albums and playlists</h3>
+                <p>heart a song, pin it, add it to a playlist, or swap in your own cover. covers you change stay on your computer.</p>
+              </div>
+            </div>
+            <div class="slide">
+              <img class="shot" src="img/quickplay-light.png" alt="The light theme" width="1280" height="800" loading="lazy" />
+              <div class="tour-cap">
+                <h3>light or dark</h3>
+                <p>dark by default. light, or follow your system, if you would rather. the player bar and Now Playing stay dark.</p>
+              </div>
+            </div>
+          </div>
+          <div class="tour-ctl">
+            <button type="button" id="prev" aria-label="Previous slide">&larr;</button>
+            <button type="button" id="next" aria-label="Next slide">&rarr;</button>
+            <span id="count">01 / 05</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="little">
+        <div class="wrap">
+          <h2>the little things</h2>
+          <ul class="little">
+            <li><b>smart dj</b><span>start from an artist, an album, a song, or your likes. artists you keep skipping drift out of the mix.</span></li>
+            <li><b>mixview</b><span>related artists around the one you are on, with a trail so you can go back.</span></li>
+            <li><b>liked songs</b><span>the heart next to a song likes it on your server. one tab lists them all.</span></li>
+            <li><b>playlists</b><span>save the queue, or build one by clicking or dragging songs in from your likes, a search or what is playing.</span></li>
+            <li><b>classic layout</b><span>artists, albums and songs side by side, like the original. switch in settings.</span></li>
+            <li><b>mini player</b><span>a small always-on-top window with the cover, the next few songs and the controls.</span></li>
+            <li><b>media keys</b><span>play, pause, next and previous from your keyboard, the Windows media overlay, or MPRIS on Linux.</span></li>
+            <li><b>your colour</b><span>eight accent colours. it drives the highlights, the glow and the tint on Now Playing.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="privacy" class="privacy">
+        <div class="wrap">
+          <h2>privacy</h2>
+          <ul>
+            <li>it talks only to the servers you add. no account, no analytics, no telemetry.</li>
+            <li>your password signs you in once and is never stored. only an access token (or, for Navidrome, a salted hash) is kept, in a file only you can read.</li>
+            <li>related artists and recommendations come from your own server. the app calls no outside service.</li>
+            <li>covers you change, and what Smart DJ learns from your skips, stay in a settings file on your computer.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="questions">
+        <div class="wrap">
+          <h2>questions</h2>
+          <details>
+            <summary>what do I need?</summary>
+            <p>a Jellyfin server, or a Navidrome (or other Subsonic) server, and the address, username and password for it. no server yet? the demo library lets you look around offline.</p>
+          </details>
+          <details>
+            <summary>is it from Microsoft?</summary>
+            <p>no. it is an independent fan project, not affiliated with or endorsed by Microsoft, and it uses none of their assets. Zune is a trademark of Microsoft Corporation.</p>
+          </details>
+          <details>
+            <summary>which systems?</summary>
+            <p>Windows (installer or portable exe) and Linux (AppImage or deb). built with Electron, so macOS would likely work from source, but it is not tested.</p>
+          </details>
+          <details>
+            <summary>mixview is mostly empty for some artists.</summary>
+            <p>related artists come from your server. Jellyfin uses its own data; Navidrome needs Last.fm (or similar) set up on the server. without it you still get that artist&rsquo;s albums.</p>
+          </details>
+          <details>
+            <summary>does smart dj analyse my music?</summary>
+            <p>no. it asks your server for similar songs, then leaves out artists you keep skipping. a streaming server does not hand over tempo or loudness, so it does not try to match on those.</p>
+          </details>
+          <details>
+            <summary>my self-signed certificate is rejected.</summary>
+            <p>tick &ldquo;trust a self-signed certificate for this server&rdquo; when you add it. it only trusts that one host.</p>
+          </details>
+          <details>
+            <summary>something looks empty. what do I check?</summary>
+            <p>run <code>npm run probe -- jellyfin http://host:8096 user pass</code> (or <code>navidrome</code>). it tries every call the app makes and prints pass or fail for each.</p>
+          </details>
+          <p style="margin-top: 28px">
+            <a class="btn" href="https://github.com/jgarza9788/BringBackZune/releases">download</a>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>
+          <a href="#top">bring back zune</a> &middot; <a href="https://github.com/jgarza9788/BringBackZune">source on GitHub</a> &middot; MIT license
+        </p>
+        <p>
+          Bring Back Zune is an independent, unofficial project and is not affiliated with or endorsed by Microsoft. Zune is a trademark of
+          Microsoft Corporation.
+        </p>
+      </div>
+    </footer>
+
+    <script>
+      (function () {
+        var slides = Array.prototype.slice.call(document.querySelectorAll('#tour-stage .slide'));
+        var count = document.getElementById('count');
+        var at = 0;
+        function show(i) {
+          at = (i + slides.length) % slides.length;
+          slides.forEach(function (s, n) {
+            s.classList.toggle('on', n === at);
+          });
+          count.textContent = String(at + 1).padStart(2, '0') + ' / ' + String(slides.length).padStart(2, '0');
+        }
+        document.getElementById('prev').addEventListener('click', function () {
+          show(at - 1);
+        });
+        document.getElementById('next').addEventListener('click', function () {
+          show(at + 1);
+        });
+      })();
+    </script>
+  </body>
+</html>

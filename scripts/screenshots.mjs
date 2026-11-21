@@ -14,13 +14,15 @@ const scenes = [
   ['collection-artists', '#/collection/artists'],
   ['collection-albums', '#/collection/albums'],
   ['collection-songs', '#/collection/songs'],
+  ['collection-playlists', '#/collection/playlists'],
   ['artist', '#/artist/demo/ar0'],
   ['album', '?play=al1-0#/album/demo/al0-0'],
   ['nowplaying', '?play=al0-0&accent=1BA1E2#/nowplaying'],
-  ['mixview', '#/mixview/demo/artist/ar0'],
+  ['mixview', '#/mixview/demo/ar0'],
+  ['quickplay-light', '?theme=light&play=al1-0#/quickplay'],
   ['search', '#/search/aurora'],
   ['sources', '#/sources'],
-  ['mini', '?play=al0-0&mini=1#/quickplay', '380,170'],
+  ['mini', '?play=al0-0&mini=1#/quickplay', '500,470'],
 ];
 
 for (const [name, suffix, size = '1280,800'] of scenes) {
@@ -29,7 +31,7 @@ for (const [name, suffix, size = '1280,800'] of scenes) {
     execFileSync(
       chrome,
       [
-        '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
+        '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--force-prefers-reduced-motion',
         `--window-size=${size}`, '--virtual-time-budget=5000', `--screenshot=${file}`,
         page.replace('index.html', 'index.html') + suffix,
       ],

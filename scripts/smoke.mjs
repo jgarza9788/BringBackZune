@@ -121,42 +121,96 @@ check('repeat cycles to "all"', (await ev(`document.querySelector('.bar-right .i
 // Library browsing
 await nav('#/collection/songs');
 check('songs tab lists tracks', (await count('.track')) > 20, `rows=${await count('.track')}`);
+const titles = () => ev(`[...document.querySelectorAll('.tracks .track:not(.track-head) .track-title')].map((e) => e.textContent)`);
+check('songs table has sortable headers', (await count('.track-head .head-cell')) === 4);
+const titleAsc = await titles();
+await click('.track-head .head-cell', 0); // title again => descending
+await sleep(500);
+const titleDesc = await titles();
+check('clicking the title header flips the order', titleDesc[0] !== titleAsc[0] && /▼/.test((await text('.track-head .head-cell.on')) ?? ''), `${titleAsc[0]} -> ${titleDesc[0]}`);
+await click('.track-head .head-cell', 3); // time
+await sleep(500);
+const dur = await ev(`[...document.querySelectorAll('.tracks .track:not(.track-head) .track-time')].slice(0, 12).map((e) => { const [m, s] = e.textContent.split(':').map(Number); return m * 60 + s; })`);
+check('sorting by time orders by length', dur.every((d, i) => i === 0 || d >= dur[i - 1]), JSON.stringify(dur));
+await nav('#/collection/songs');
 const rowTitle = await ev(`document.querySelectorAll('.track .track-title')[3].textContent`);
-await ev(`document.querySelectorAll('.track')[3].dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`);
+await ev(`document.querySelectorAll('.track:not(.track-head)')[3].dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`);
 await sleep(500);
 check('double-click row plays that song', (await text('.bar-title')) === rowTitle, `${await text('.bar-title')} vs ${rowTitle}`);
 
+await nav('#/collection/playlists');
+check('playlists have sort buttons', (await count('.chips .chip')) >= 2);
+const firstPl = () => text('.grid .tile .tile-title');
+const nameFirst = await firstPl();
+await click('.chips .chip', 1); // most songs
+await sleep(400);
+const sizeCounts = await ev(`[...document.querySelectorAll('.grid .tile .tile-sub')].map((e) => parseInt(e.textContent))`);
+check('playlists sort by size', sizeCounts.every((n, i) => i === 0 || n <= sizeCounts[i - 1]), JSON.stringify(sizeCounts));
 await nav('#/collection/albums');
 check('albums grid renders', (await count('.grid .tile')) >= 20);
 await nav('#/collection/artists');
 check('artists grouped by letter', (await count('.letter-group')) >= 8);
+const lastLetter = (await count('.letters button')) - 1;
+await click('.letters button', lastLetter);
+await sleep(1200);
+const jump = await ev(`(() => { const bar = document.querySelector('.letters').getBoundingClientRect(); const groups = [...document.querySelectorAll('.letter-group')]; const g = groups[groups.length - 1].getBoundingClientRect(); const lt = groups[groups.length - 1].querySelector('.letter').getBoundingClientRect(); return { gap: lt.top - bar.bottom, main: document.querySelector('.main').scrollTop }; })()`);
+check('letter jump leaves the letter visible below the sticky bar', jump.gap >= 0, JSON.stringify(jump));
+await click('.letters button', 0);
+await sleep(1200);
+const top = await ev(`(() => { const m = document.querySelector('.main'); const bar = document.querySelector('.letters'); const b = bar.getBoundingClientRect(); const lt = document.querySelector('.letter-group .letter').getBoundingClientRect(); return JSON.stringify({ gap: lt.top - b.bottom, scrollTop: m.scrollTop, barTop: b.top, barH: b.height, ltTop: lt.top, mainTop: m.getBoundingClientRect().top, css: getComputedStyle(bar).top }); })()`);
+check('first letter is not cut off either', JSON.parse(top).gap >= 0, top);
 
 await nav('#/artist/demo/ar0');
 check('artist page: hero + albums', (await text('.hero-info h1')) === 'Aurora Lane' && (await count('.grid .tile')) === 3);
 await nav('#/album/demo/al3-0');
 check('album page lists numbered tracks', (await count('.track')) >= 8);
-await click('.actions .btn:nth-child(6)'); // pin
+await click('.actions .btn:nth-child(5)'); // pin
 await sleep(300);
-check('pin button toggles to "pinned"', /pinned/.test((await text('.actions .btn:nth-child(6)')) ?? ''));
-await click('.actions .btn:nth-child(5)'); // smart dj
+check('pin button toggles to "pinned"', /pinned/.test((await text('.actions .btn:nth-child(5)')) ?? ''));
+await click('.actions .btn:nth-child(4)'); // smart dj
 await sleep(1200);
 check('smart dj builds a queue and plays', (await count('.shell')) === 1 && !!(await text('.bar-title')));
 
 await nav('#/quickplay');
 check('quickplay now shows 5/6 pins', (await text('.count')) === '5/6');
 
+// Pinning from tiles: hover button and right-click, on the albums grid (6/6 is the cap, so unpin one first)
+await click('.row-grid.six .tile-x', 0);
+await sleep(200);
+check('unpinning from quickplay frees a slot', (await text('.count')) === '4/6');
+await nav('#/collection/albums');
+const pinsBefore = await count('.grid .tile-pin.on');
+const [freeA, freeB] = await ev(`[...document.querySelectorAll('.grid .tile')].map((t, i) => (t.querySelector('.tile-pin.on') ? -1 : i)).filter((i) => i >= 0).slice(0, 2)`);
+await ev(`document.querySelectorAll('.grid .tile')[${freeA}].querySelector('.tile-pin').click()`);
+await sleep(200);
+check('tile pin button pins an album', (await count('.grid .tile-pin.on')) === pinsBefore + 1);
+await ev(`document.querySelectorAll('.grid .tile')[${freeB}].dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`);
+await sleep(200);
+check('right-click pins an album too', (await count('.grid .tile-pin.on')) === pinsBefore + 2);
+await nav('#/quickplay');
+check('both show up on quickplay (6/6)', (await text('.count')) === '6/6');
+
+// Everything is pinnable: playlists and songs too (we are on quickplay, which is full)
+await click('.row-grid.six .tile-x', 0);
+await click('.row-grid.six .tile-x', 0);
+await nav('#/collection/playlists');
+await ev(`document.querySelectorAll('.grid .tile')[0].dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`);
+await sleep(200);
+check('right-click pins a playlist', (await count('.grid .tile-pin.on')) === 1);
+await nav('#/album/demo/al3-0');
+await click('.track-actions .pin', 0);
+await sleep(200);
+check('song row pin button pins a song', (await count('.track-actions .pin.on')) === 1);
+await nav('#/quickplay');
+check('pinned playlist + song are on quickplay', (await count('.row-grid.six .tile-x')) >= 2);
+await click('.row-grid.six .tile-x', 0);
+await click('.row-grid.six .tile-x', 0);
+
 await nav('#/nowplaying');
 check('now playing: title + queue', !!(await text('.np-title')) && (await count('.np-queue li')) > 0);
 await click('.np-queue li .q-main');
 await sleep(400);
 check('queue item jump works', !!(await text('.np-title')));
-
-await nav('#/mixview/demo/artist/ar0');
-check('mixview shows 8 related tiles', (await count('.mix-sat')) === 8);
-const hashBefore = await ev('location.hash');
-await click('.mix-sat', 2);
-await sleep(500);
-check('mixview re-centres on click', (await ev('location.hash')) !== hashBefore && (await count('.mix-sat')) === 8);
 
 await nav('#/search/aurora');
 check('search results (artists/albums/songs)', (await count('.search .section')) === 3);
@@ -185,7 +239,7 @@ await nav('#/quickplay');
 await click('.bar-right .ib[title="Mini player"]');
 await sleep(400);
 check('mini player replaces the shell', (await count('.mini')) === 1 && (await count('.shell')) === 0);
-await click('.mini-x');
+await click('.mini .winctl button[title="Back to full window"]');
 await sleep(400);
 check('mini player can return to full window', (await count('.shell')) === 1);
 

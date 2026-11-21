@@ -2,3 +2,6 @@ node_modules/
 dist/
 release/
 *.log
+
+# Reference frames from original Zune software
+ZuneSoftware_pngs/
