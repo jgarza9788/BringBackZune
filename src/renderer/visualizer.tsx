@@ -51,16 +51,17 @@ export function Visualizer(): JSX.Element {
         const target = still ? (playing ? 0.3 : 0) : (raw[i] ?? 0);
         const c = cur[i] ?? 0;
         // quick attack, slower release so the edge ripples instead of flickering
-        cur[i] = c + (target - c) * (target > c ? 0.75 : 0.2);
+        cur[i] = c + (target - c) * (target > c ? 0.75 : 0.32);
       }
       // auto-gain: normalise to the recent peak so quiet tracks move as much as loud ones
       let loudest = 0;
       for (let i = 0; i < BARS; i++) loudest = Math.max(loudest, cur[i] ?? 0);
-      peak = Math.max(0.25, loudest, peak * 0.997);
+      peak = Math.max(0.25, loudest, peak * 0.99);
       const norm = 1 / peak;
-      let bars = Array.from(cur, (v) => Math.min(1, v * norm));
+      // contrast curve: quiet bands sink, loud ones stand out
+      let bars = Array.from(cur, (v) => Math.pow(Math.min(1, v * norm), 1.4));
       // smooth along the frequency axis: the original's edge is a gentle swell, not a jagged skyline
-      for (let pass = 0; pass < 2; pass++) {
+      for (let pass = 0; pass < 1; pass++) {
         const prev = bars;
         bars = prev.map((v, i) => ((prev[i - 1] ?? v) + v * 2 + (prev[i + 1] ?? v)) / 4);
       }
@@ -99,8 +100,9 @@ export function Visualizer(): JSX.Element {
         const a = Math.floor(f);
         const v = (bars[a] ?? 0) + ((bars[Math.min(BARS - 1, a + 1)] ?? 0) - (bars[a] ?? 0)) * (f - a);
         // the whole dome heaves with the bass / overall energy, and its edge ripples with each band
-        const level = 0.42 + 0.45 * bass + 0.25 * energy;
-        top.push(h * 0.82 * Math.min(1, bell * level * (0.72 + 0.5 * v) * presence));
+        const level = 0.22 + 0.7 * bass + 0.35 * energy;
+        // soft limit instead of a hard clamp, so loud passages keep rising rather than flattening out at the top
+        top.push(h * 0.95 * (1 - Math.exp(-1.5 * bell * level * (0.45 + 0.9 * v) * presence)));
       }
 
       const pad = w * 0.05;
