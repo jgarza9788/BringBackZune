@@ -1,8 +1,13 @@
 /** Hash routing: pure functions (no DOM access) so they can be unit-tested. */
+import type { CollectionTab } from '../core/settings';
 
 export type Route =
   | { name: 'quickplay' }
+<<<<<<< HEAD
   | { name: 'collection'; tab: 'artists' | 'albums' | 'playlists' | 'songs' | 'liked' }
+=======
+  | { name: 'collection'; tab: CollectionTab }
+>>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
   | { name: 'artist'; src: string; id: string }
   | { name: 'mixview'; src: string; id: string }
   | { name: 'playlist'; src: string; id: string }

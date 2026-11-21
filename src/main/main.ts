@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { HttpRequest, HttpResponse } from '../core';
 import type { Settings } from '../core';
 import { SettingsStore } from './settings';
+import { createWmController, detectWm, type MiniTarget } from './wm';
 
 // Hardware media keys + MPRIS (Linux) / SMTC (Windows) via Chromium's media session.
 app.commandLine.appendSwitch('enable-features', 'HardwareMediaKeyHandling,MediaSessionService');
@@ -11,6 +12,19 @@ let win: BrowserWindow | null = null;
 let store: SettingsStore;
 let savedBounds: Rectangle | null = null;
 let wasMaximized = false;
+/** Floats / pins the mini player on tiling WMs (Hyprland, niri, sway, i3); no-op elsewhere. */
+const wm = createWmController(detectWm(process.env, process.platform));
+
+function miniTarget(w: BrowserWindow): MiniTarget {
+  let xid: number | undefined;
+  try {
+    const h = w.getNativeWindowHandle();
+    if (h.length >= 4) xid = h.readUInt32LE(0);
+  } catch {
+    /* not available */
+  }
+  return { pid: process.pid, xid, width: 300, height: 470, margin: 16 };
+}
 /** Hosts the user explicitly allowed to use self-signed certificates. */
 const selfSignedHosts = new Set<string>();
 
@@ -141,7 +155,11 @@ function registerIpc(): void {
   handle('win:close', () => win?.close());
   handle('win:isMaximized', () => win?.isMaximized() ?? false);
 
+<<<<<<< HEAD
   handle('win:mini', (_e, on: unknown) => {
+=======
+  ipcMain.handle('win:mini', async (_e, on: unknown) => {
+>>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
     if (!win) return;
     if (on) {
       wasMaximized = win.isMaximized();
@@ -151,10 +169,14 @@ function registerIpc(): void {
       win.setSize(300, 470);
       win.setAlwaysOnTop(true);
       win.setResizable(false);
+      await wm.enterMini(miniTarget(win));
     } else {
       win.setResizable(true);
       win.setAlwaysOnTop(false);
       win.setMinimumSize(900, 600);
+      // After lifting the fixed size, so the WM can grow the window back.
+      await wm.exitMini(miniTarget(win));
+      if (!win) return;
       if (savedBounds) win.setBounds(savedBounds);
       if (wasMaximized) win.maximize();
     }

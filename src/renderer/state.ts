@@ -1,4 +1,4 @@
-import { signal, computed } from '@preact/signals';
+import { signal, computed, effect } from '@preact/signals';
 import {
   buildLikesMix,
   buildSmartMix,
@@ -80,6 +80,16 @@ export function update(fn: (s: Settings) => void): void {
   settings.value = s;
   persist();
 }
+
+// Remember the collection tab across restarts (only once real settings are loaded).
+effect(() => {
+  const r = route.value;
+  if (!ready.value || r.name !== 'collection' || r.tab === settings.peek().collectionTab) return;
+  update((s) => (s.collectionTab = r.tab));
+});
+
+/** Where the "collection" pivot goes: the tab the user was last on. */
+export const collectionRoute = computed<Route>(() => ({ name: 'collection', tab: settings.value.collectionTab }));
 
 export const accent = computed(() => settings.value.accent);
 export const ACCENTS = [

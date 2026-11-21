@@ -7,11 +7,13 @@ import { DEFAULT_SETTINGS, sanitizeSettings, SettingsStore } from '../src/main/s
 describe('settings', () => {
   it('sanitizes garbage to defaults', () => {
     expect(sanitizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
-    const s = sanitizeSettings({ sources: [1, { id: 'x', url: 'u', kind: 'evil' }], accent: 'red', volume: 9, repeat: 'x' });
+    const s = sanitizeSettings({ sources: [1, { id: 'x', url: 'u', kind: 'evil' }], accent: 'red', volume: 9, repeat: 'x', collectionTab: 'evil', collectionSort: { albums: 'x', playlists: 7, songs: { by: 'nope', desc: 'yes' } } });
     expect(s.sources).toEqual([]);
     expect(s.accent).toBe(DEFAULT_SETTINGS.accent);
     expect(s.volume).toBe(DEFAULT_SETTINGS.volume);
     expect(s.repeat).toBe('off');
+    expect(s.collectionTab).toBe('artists');
+    expect(s.collectionSort).toEqual({ albums: 'name', playlists: 'name', songs: { by: 'title' } });
   });
 
   it('keeps valid values', () => {
@@ -22,9 +24,12 @@ describe('settings', () => {
       volume: 0.3,
       shuffle: true,
       repeat: 'all',
+      collectionTab: 'playlists',
+      collectionSort: { albums: 'recent', playlists: 'size', songs: { by: 'time', desc: true } },
     });
     expect(s.sources).toHaveLength(1);
-    expect(s).toMatchObject({ activeSourceId: 'a', accent: '#1BA1E2', volume: 0.3, shuffle: true, repeat: 'all' });
+    expect(s).toMatchObject({ activeSourceId: 'a', accent: '#1BA1E2', volume: 0.3, shuffle: true, repeat: 'all', collectionTab: 'playlists' });
+    expect(s.collectionSort).toEqual({ albums: 'recent', playlists: 'size', songs: { by: 'time', desc: true } });
   });
 
   it('writes atomically with owner-only permissions and round-trips', async () => {
