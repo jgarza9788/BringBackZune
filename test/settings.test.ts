@@ -32,6 +32,12 @@ describe('settings', () => {
     expect(s.collectionSort).toEqual({ albums: 'recent', playlists: 'size', songs: { by: 'time', desc: true } });
   });
 
+  it('keeps both the display settings and the remembered collection tab (incl. liked)', () => {
+    const s = sanitizeSettings({ theme: 'light', layout: 'classic', collectionTab: 'liked' });
+    expect(s).toMatchObject({ theme: 'light', layout: 'classic', collectionTab: 'liked', covers: {} });
+    expect(s.taste).toBeDefined();
+  });
+
   it('writes atomically with owner-only permissions and round-trips', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'bbz-'));
     const file = path.join(dir, 'sub', 'settings.json');

@@ -347,20 +347,6 @@ function ArtistsTab({ srcId }: { srcId: string }): JSX.Element {
   );
 }
 
-const remembered = new Map<string, unknown>();
-/** useState that survives the view unmounting, so leaving the collection and coming back keeps its sort. */
-function useRemembered<T>(key: string, initial: T): [T, (v: T | ((cur: T) => T)) => void] {
-  const [v, set] = useState<T>(() => (remembered.has(key) ? (remembered.get(key) as T) : initial));
-  return [
-    v,
-    (next) => {
-      const resolved = typeof next === 'function' ? (next as (cur: T) => T)(v) : next;
-      remembered.set(key, resolved);
-      set(resolved);
-    },
-  ];
-}
-
 const PAGE = 120;
 
 function usePaged<T>(load: (offset: number, limit: number) => Promise<T[]>, deps: unknown[]) {
@@ -406,12 +392,8 @@ function MoreButton(p: { done: boolean; busy: boolean; error?: string; more(): v
 }
 
 function AlbumsTab({ srcId }: { srcId: string }): JSX.Element {
-<<<<<<< HEAD
-  const [sort, setSort] = useRemembered<'name' | 'recent' | 'artist'>('albums-sort', 'name');
-=======
   const sort = settings.value.collectionSort.albums;
   const setSort = (v: AlbumSort): void => update((s) => (s.collectionSort.albums = v));
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
   const p = usePaged((offset, limit) => requireSource(srcId).getAlbums(sort, { offset, limit }), [srcId, sort]);
   return (
     <>
@@ -443,12 +425,8 @@ const sortPlaylists = (lists: Playlist[], by: PlaylistSort): Playlist[] => {
 
 function PlaylistsTab({ srcId }: { srcId: string }): JSX.Element {
   const st = useAsync(() => cached(`playlists:${srcId}`, () => requireSource(srcId).getPlaylists()), [srcId]);
-<<<<<<< HEAD
-  const [sort, setSort] = useRemembered<PlaylistSort>('playlists-sort', 'name');
-=======
   const saved = settings.value.collectionSort.playlists;
   const setSort = (v: PlaylistSort): void => update((s) => (s.collectionSort.playlists = v));
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
   return (
     <Await state={st}>
       {(all) => {
@@ -753,12 +731,8 @@ function ClassicLibrary({ srcId }: { srcId: string }): JSX.Element {
 }
 
 function SongsTab({ srcId }: { srcId: string }): JSX.Element {
-<<<<<<< HEAD
-  const [sort, setSort] = useRemembered<TrackSort>('songs-sort', { by: 'title' });
-=======
   const sort = settings.value.collectionSort.songs;
   const setSort = (fn: (s: TrackSort) => TrackSort): void => update((st) => (st.collectionSort.songs = fn(st.collectionSort.songs)));
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
   const source = requireSource(srcId);
   // Servers that can sort do it themselves (so paging stays correct); otherwise we sort what has loaded so far.
   const p = usePaged((offset, limit) => source.getTracks({ offset, limit, sort }), [srcId, sort.by, sort.desc]);

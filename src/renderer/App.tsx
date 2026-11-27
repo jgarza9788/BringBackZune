@@ -21,26 +21,19 @@ import {
   toggleShuffle,
   togglePlay,
   type Route,
-  lastCollectionTab,
 } from './state';
 import { getBridge } from './bridge';
 import { Art, Icon, LikeButton } from './ui';
 import { AlbumPage, ArtistPage, Collection, PlaylistPage, Quickplay } from './views-library';
 import { Visualizer } from './visualizer';
+import { routeKey, useRouteTransition } from './transitions';
 import { MixviewPage } from './views-mixview';
 import { NowPlaying, SearchView, SourcesView } from './views-play';
 
-<<<<<<< HEAD
-const PIVOT: { label: string; match: Route['name'][]; to: Route }[] = [
-  { label: 'quickplay', match: ['quickplay'], to: { name: 'quickplay' } },
-  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist', 'mixview'], to: { name: 'collection', tab: 'artists' } },
-  { label: 'now playing', match: ['nowplaying'], to: { name: 'nowplaying' } },
-=======
 const PIVOT: { label: string; match: Route['name'][]; to: () => Route }[] = [
   { label: 'quickplay', match: ['quickplay'], to: () => ({ name: 'quickplay' }) },
-  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist'], to: () => collectionRoute.value },
+  { label: 'collection', match: ['collection', 'artist', 'album', 'playlist', 'mixview'], to: () => collectionRoute.value },
   { label: 'now playing', match: ['nowplaying'], to: () => ({ name: 'nowplaying' }) },
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
 ];
 
 function View({ r }: { r: Route }): JSX.Element {
@@ -68,6 +61,7 @@ function View({ r }: { r: Route }): JSX.Element {
 
 export function App(): JSX.Element {
   useGlobalKeys();
+  const tr = useRouteTransition(route.value);
   if (!ready.value) return <div class="boot" />;
   if (player.mini.value) return <Mini />;
 
@@ -85,11 +79,7 @@ export function App(): JSX.Element {
         </button>
         <nav class="pivot">
           {PIVOT.map((p) => (
-<<<<<<< HEAD
-            <a key={p.label} href={`#${hashOf(p.to.name === 'collection' ? { name: 'collection', tab: lastCollectionTab.value } : p.to)}`} class={p.match.includes(r.name) ? 'active' : ''}>
-=======
             <a key={p.label} href={`#${hashOf(p.to())}`} class={p.match.includes(r.name) ? 'active' : ''}>
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
               {p.label}
             </a>
           ))}
@@ -116,8 +106,8 @@ export function App(): JSX.Element {
           )}
         </div>
       </header>
-      <main class="main" key={routeKey(r)}>
-        <View r={r} />
+      <main class={`main ${tr.leaving ? 'leaving' : ''}`} key={routeKey(tr.shown)} data-dir={tr.dir || undefined} data-continuum={tr.continuum || undefined}>
+        <View r={tr.shown} />
       </main>
       <PlayerBar />
       {toast.value && <div class={`toast ${toast.value.kind}`}>{toast.value.msg}</div>}
@@ -152,10 +142,6 @@ const hashOf = (r: Route): string => {
       return `/${r.name}`;
   }
 };
-
-/** Re-key only on view changes (not on search typing) so enter animations replay per page. */
-const routeKey = (r: Route): string =>
-  r.name === 'collection' ? `collection-${r.tab}` : r.name === 'search' ? 'search' : JSON.stringify(r);
 
 /** Our own minimize / maximize / close, since the OS window frame is gone. */
 function WindowControls({ mini = false }: { mini?: boolean }): JSX.Element {

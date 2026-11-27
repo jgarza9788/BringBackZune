@@ -38,12 +38,8 @@ const bridge = getBridge();
 export { hashFor, parseHash, type Route };
 
 export const route = signal<Route>(parseHash(location.hash));
-/** The collection tab last visited, so the "collection" pivot returns to it. */
-export const lastCollectionTab = signal<'artists' | 'albums' | 'playlists' | 'songs' | 'liked'>('artists');
 const applyHash = (): void => {
-  const r = parseHash(location.hash);
-  if (r.name === 'collection') lastCollectionTab.value = r.tab;
-  route.value = r;
+  route.value = parseHash(location.hash);
 };
 applyHash();
 window.addEventListener('hashchange', applyHash);
