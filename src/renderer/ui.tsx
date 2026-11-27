@@ -1,6 +1,7 @@
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { formatTime, isPinned, trackToPin, type PinRef, type Track, type TrackSortKey } from '../core';
+import { markContinuum } from './transitions';
 import { addToPlaylist, artUrl, cached, createPlaylistFrom, enqueue, isLiked, jumpTo, player, playTracks, requireSource, settings, toggleLike, togglePinned } from './state';
 
 /* ---------------------------------------------------------------- icons */
@@ -147,8 +148,11 @@ export function Tile(props: {
       style={{ '--i': props.i ?? 0 } as JSX.CSSProperties}
       role="button"
       tabIndex={0}
-      onClick={props.onClick}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), props.onClick?.())}
+      onClick={(e) => {
+        if (props.onClick) markContinuum(e.currentTarget as HTMLElement);
+        props.onClick?.();
+      }}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), markContinuum(e.currentTarget as HTMLElement), props.onClick?.())}
     >
       <Art src={props.src} id={props.imageId} label={props.title} size={400} />
       <div class="tile-cap">

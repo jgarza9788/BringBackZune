@@ -155,11 +155,7 @@ function registerIpc(): void {
   handle('win:close', () => win?.close());
   handle('win:isMaximized', () => win?.isMaximized() ?? false);
 
-<<<<<<< HEAD
-  handle('win:mini', (_e, on: unknown) => {
-=======
-  ipcMain.handle('win:mini', async (_e, on: unknown) => {
->>>>>>> dc4ba907d986eb94865bbd462a8ee080a330a2b7
+  handle('win:mini', async (_e, on: unknown) => {
     if (!win) return;
     if (on) {
       wasMaximized = win.isMaximized();

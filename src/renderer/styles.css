@@ -245,6 +245,86 @@ button {
     transform: none;
   }
 }
+@keyframes turnstile-out {
+  to {
+    opacity: 0;
+    transform: perspective(900px) rotateY(14deg) translateX(24px);
+  }
+}
+@keyframes slide-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(64px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-back {
+  from {
+    opacity: 0;
+    transform: translateX(-64px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-out-fwd {
+  to {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
+@keyframes slide-out-back {
+  to {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+}
+@keyframes feather {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateY(-24deg) translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* leaving: turnstile out; between pivot tabs the page slides the way you are travelling instead */
+.main.leaving {
+  animation: turnstile-out 0.15s ease-in both;
+  pointer-events: none;
+}
+.main[data-dir='fwd'] {
+  animation-name: slide-fwd;
+}
+.main[data-dir='back'] {
+  animation-name: slide-back;
+}
+.main.leaving[data-dir='fwd'] {
+  animation-name: slide-out-fwd;
+}
+.main.leaving[data-dir='back'] {
+  animation-name: slide-out-back;
+}
+/* continuum: the View Transitions API animates the page, so the page's own entrance stays out of the snapshot */
+.main[data-continuum] {
+  animation: none;
+}
+.hero-art {
+  view-transition-name: cover;
+}
+::view-transition-group(cover) {
+  animation-duration: 0.45s;
+  animation-timing-function: var(--ease);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.2s;
+}
 @keyframes pane-in {
   from {
     opacity: 0;
@@ -449,7 +529,9 @@ h1 {
   background: var(--tile);
   overflow: hidden;
   cursor: pointer;
-  animation: rise 0.45s var(--ease) both;
+  transform-origin: 0 50%;
+  /* backwards, not both: a held end-state would override the hover scale below */
+  animation: feather 0.5s var(--ease) backwards;
   animation-delay: calc(var(--i, 0) * 35ms);
   transition: transform 0.18s var(--ease), box-shadow 0.18s;
 }
